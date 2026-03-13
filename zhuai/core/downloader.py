@@ -88,10 +88,11 @@ class DownloadManager:
                     filename = self._sanitize_filename(paper.title)
                     filepath = self.download_dir / f"{filename}.pdf"
                     
-                    counter = 1
-                    while filepath.exists():
-                        filepath = self.download_dir / f"{filename}_{counter}.pdf"
-                        counter += 1
+                    # Check if file already exists - skip duplicates
+                    if filepath.exists():
+                        if pbar:
+                            pbar.update(1)
+                        return True, str(filepath)  # Return existing file path
                     
                     with open(filepath, "wb") as f:
                         f.write(content)

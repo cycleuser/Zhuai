@@ -25,15 +25,7 @@ class PaperSearcher:
         download_dir: str = "./downloads",
         **source_configs,
     ):
-        """Initialize paper searcher.
-        
-        Args:
-            sources: List of source names. None = all sources.
-            timeout: Request timeout in seconds.
-            max_concurrent: Maximum concurrent requests.
-            download_dir: Directory for downloaded PDFs.
-            **source_configs: Configuration for specific sources.
-        """
+        """Initialize paper searcher."""
         self.timeout = timeout
         self.max_concurrent = max_concurrent
         
@@ -62,17 +54,7 @@ class PaperSearcher:
         sources: Optional[List[str]] = None,
         show_progress: bool = True,
     ) -> List[Paper]:
-        """Search for papers across multiple sources.
-        
-        Args:
-            query: Search query (supports Chinese and English).
-            max_results: Maximum total results.
-            sources: List of sources to search. None = all configured.
-            show_progress: Show progress bar.
-            
-        Returns:
-            List of papers matching the query.
-        """
+        """Search for papers across multiple sources."""
         if sources is None:
             sources_to_search = list(self.sources.keys())
         else:
@@ -82,7 +64,6 @@ class PaperSearcher:
             return []
         
         results_per_source = max(10, max_results // len(sources_to_search))
-        
         all_papers: List[Paper] = []
         
         pbar = None
@@ -104,7 +85,6 @@ class PaperSearcher:
             pbar.close()
         
         unique_papers = self._deduplicate_papers(all_papers)
-        
         unique_papers.sort(key=lambda p: p.citations, reverse=True)
         
         return unique_papers[:max_results]
@@ -145,276 +125,185 @@ class PaperSearcher:
         papers: List[Paper],
         filepath: str,
     ) -> None:
-        """Export papers to CSV."""
+        """Export papers to CSV file."""
         self.download_manager.export_to_csv(papers, filepath)
     
-    def export_unavailable_citations(
+    def export_papers_with_citations(
         self,
         papers: List[Paper],
-        filepath: str,
-        style: str = "apa",
+        download_results: Optional[Dict[str, tuple]] = None,
+        output_dir: str = "./output",
     ) -> None:
-        """Export citations for papers without PDFs.
+        """Export papers with citations and links to CSV and HTML.
         
-        Args:
-            papers: List of papers.
-            filepath: Output file path.
-            style: Citation style (apa, mla, chicago, gb_t_7714, bibtex).
+        Available papers: citations + local file path
+        Unavailable papers: citations + download links
         """
-        unavailable = [p for p in papers if not p.can_download]
+        from pathlib import Path
         
-        if not unavailable:
-            return
+        output_dir = Path(output_dir)
+        output_dir.mkdir(parents=True, exist_ok=True)
         
-        # Export text file
-        with open(filepath, "w", encoding="utf-8") as f:
-            for i, paper in enumerate(unavailable, 1):
-                citation = self.citation_formatter.format(paper, style)
-                f.write(f"{i}. {citation}\n\n")
-                
-                if paper.source_url:
-                    f.write(f"   URL: {paper.source_url}\n")
-                if paper.doi:
-                    f.write(f"   DOI: https://doi.org/{paper.doi}\n")
-                f.write("\n")
+        # Separate available and unavailable papers
+        available_papers = []
+        unavailable_papers = []
         
-        # Export CSV with bilingual citations and download links
-        csv_filepath = filepath.replace(".txt", "_with_citations.csv")
-        self._export_unavailable_csv(unavailable, csv_filepath)
+        for paper in papers:
+            if download_results and paper.title in download_results:
+                success, filepath = download_results[paper.title]
+                if success and filepath:
+                    available_papers.append((paper, filepath))
+                else:
+                    unavailable_papers.append(paper)
+            elif paper.can_download:
+                unavailable_papers.append(paper)
+            else:
+                unavailable_papers.append(paper)
         
-        # Export HTML with formatted citations and links
-        html_filepath = filepath.replace(".txt", "_with_citations.html")
-        self._export_unavailable_html(unavailable, html_filepath)
+        # Export available papers (with local file paths)
+        if available_papers:
+            self._export_available_papers(available_papers, output_dir)
+        
+        # Export unavailable papers (with download links)
+        if unavailable_papers:
+            self._export_unavailable_papers(unavailable_papers, output_dir)
     
-    def _export_unavailable_csv(self, papers: List[Paper], filepath: str) -> None:
-        """Export unavailable papers to CSV with bilingual citations.
-        
-        Args:
-            papers: List of unavailable papers.
-            filepath: Output CSV file path.
-        """
+    def _export_available_papers(self, papers_with_paths: List[tuple], output_dir: Path) -> None:
+        """Export available papers with citations and file paths."""
         import csv
         
-        fieldnames = [
-            "title",
-            "authors",
-            "year",
-            "journal",
-            "volume",
-            "issue",
-            "pages",
-            "doi",
-            "source_url",
-            "pdf_url",
-            "source",
-            "citation_apa",
-            "citation_gb_t_7714",
-            "citation_mla",
-            "citation_chicago",
-            "citation_bibtex",
-        ]
-        
-        with open(filepath, "w", newline="", encoding="utf-8") as f:
+        # CSV export
+        csv_file = output_dir / "available_papers.csv"
+        with open(csv_file, "w", newline="", encoding="utf-8") as f:
+            fieldnames = [
+                "title", "authors", "year", "journal", "doi",
+                "citation_apa", "citation_gb_t_7714",
+                "local_file_path", "source"
+            ]
             writer = csv.DictWriter(f, fieldnames=fieldnames)
             writer.writeheader()
             
-            for paper in papers:
-                row = {
+            for paper, filepath in papers_with_paths:
+                writer.writerow({
                     "title": paper.title,
                     "authors": "; ".join(paper.authors),
                     "year": paper.year or "",
                     "journal": paper.journal or "",
-                    "volume": paper.volume or "",
-                    "issue": paper.issue or "",
-                    "pages": paper.pages or "",
                     "doi": paper.doi or "",
-                    "source_url": paper.source_url or "",
-                    "pdf_url": paper.pdf_url or "",
-                    "source": paper.source or "",
                     "citation_apa": self.citation_formatter.format(paper, "apa"),
                     "citation_gb_t_7714": self.citation_formatter.format(paper, "gb_t_7714"),
-                    "citation_mla": self.citation_formatter.format(paper, "mla"),
-                    "citation_chicago": self.citation_formatter.format(paper, "chicago"),
-                    "citation_bibtex": self.citation_formatter.format(paper, "bibtex"),
-                }
-                writer.writerow(row)
+                    "local_file_path": filepath,
+                    "source": paper.source or "",
+                })
+        
+        # HTML export
+        html_file = output_dir / "available_papers.html"
+        self._generate_html_available(papers_with_paths, html_file)
+        
+        print(f"✓ Exported {len(papers_with_paths)} available papers to {output_dir}/")
     
-def _export_unavailable_html(self, papers: List[Paper], filepath: str) -> None:
-        """Export unavailable papers to formatted HTML with links.
+    def _export_unavailable_papers(self, papers: List[Paper], output_dir: Path) -> None:
+        """Export unavailable papers with citations and download links."""
+        import csv
         
-        Args:
-            papers: List of unavailable papers.
-            filepath: Output HTML file path.
-        """
-        # Build HTML content
+        # CSV export
+        csv_file = output_dir / "unavailable_papers.csv"
+        with open(csv_file, "w", newline="", encoding="utf-8") as f:
+            fieldnames = [
+                "title", "authors", "year", "journal", "doi",
+                "citation_apa", "citation_gb_t_7714",
+                "source_url", "source"
+            ]
+            writer = csv.DictWriter(f, fieldnames=fieldnames)
+            writer.writeheader()
+            
+            for paper in papers:
+                writer.writerow({
+                    "title": paper.title,
+                    "authors": "; ".join(paper.authors),
+                    "year": paper.year or "",
+                    "journal": paper.journal or "",
+                    "doi": paper.doi or "",
+                    "citation_apa": self.citation_formatter.format(paper, "apa"),
+                    "citation_gb_t_7714": self.citation_formatter.format(paper, "gb_t_7714"),
+                    "source_url": paper.source_url or "",
+                    "source": paper.source or "",
+                })
+        
+        # HTML export
+        html_file = output_dir / "unavailable_papers.html"
+        self._generate_html_unavailable(papers, html_file)
+        
+        print(f"✓ Exported {len(papers)} unavailable papers to {output_dir}/")
+    
+    def _generate_html_available(self, papers_with_paths: List[tuple], filepath: Path) -> None:
+        """Generate HTML for available papers."""
         html_parts = []
-        
-        # HTML header
         html_parts.append("""<!DOCTYPE html>
 <html lang="zh-CN">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>无法下载的文献列表 - Unavailable Papers</title>
-    <style>
-        body {
-            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
-            line-height: 1.6;
-            max-width: 1200px;
-            margin: 0 auto;
-            padding: 20px;
-            background-color: #f5f5f5;
-        }
-        h1 {
-            color: #333;
-            border-bottom: 3px solid #4CAF50;
-            padding-bottom: 10px;
-        }
-        h2 {
-            color: #555;
-            margin-top: 30px;
-        }
-        .paper {
-            background: white;
-            border-radius: 8px;
-            padding: 20px;
-            margin-bottom: 20px;
-            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
-        }
-        .paper-title {
-            font-size: 1.2em;
-            font-weight: bold;
-            color: #2196F3;
-            margin-bottom: 10px;
-        }
-        .paper-info {
-            color: #666;
-            margin-bottom: 15px;
-        }
-        .paper-info span {
-            margin-right: 15px;
-        }
-        .citation-section {
-            margin-top: 15px;
-            padding-top: 15px;
-            border-top: 1px solid #eee;
-        }
-        .citation-format {
-            margin-bottom: 10px;
-        }
-        .citation-label {
-            font-weight: bold;
-            color: #4CAF50;
-            display: inline-block;
-            width: 120px;
-        }
-        .citation-text {
-            color: #333;
-            font-style: italic;
-        }
-        .links {
-            margin-top: 15px;
-            padding-top: 15px;
-            border-top: 1px solid #eee;
-        }
-        .links a {
-            display: inline-block;
-            margin-right: 15px;
-            padding: 8px 16px;
-            background-color: #2196F3;
-            color: white;
-            text-decoration: none;
-            border-radius: 4px;
-            transition: background-color 0.3s;
-        }
-        .links a:hover {
-            background-color: #1976D2;
-        }
-        .links a.doi {
-            background-color: #FF9800;
-        }
-        .links a.doi:hover {
-            background-color: #F57C00;
-        }
-        .summary {
-            background: #E3F2FD;
-            border-left: 4px solid #2196F3;
-            padding: 15px;
-            margin-bottom: 20px;
-        }
-    </style>
-</head>
-<body>
-    <h1>无法下载的文献列表 / Unavailable Papers</h1>""")
+<head><meta charset="UTF-8"><title>已下载文献 - Downloaded Papers</title>
+<style>body{font-family:sans-serif;max-width:1200px;margin:0 auto;padding:20px;}
+h1{color:#4CAF50;}.paper{background:white;padding:20px;margin:15px 0;border-radius:8px;box-shadow:0 2px 4px rgba(0,0,0,0.1);}
+.title{font-size:1.2em;font-weight:bold;color:#2196F3;margin-bottom:10px;}
+.info{color:#666;margin:10px 0;}.citation{background:#f5f5f5;padding:10px;margin:10px 0;border-radius:4px;}
+.label{font-weight:bold;color:#4CAF50;}.file-link{display:inline-block;margin-top:10px;padding:8px 16px;background:#4CAF50;color:white;text-decoration:none;border-radius:4px;}</style></head>
+<body><h1>已下载文献 / Downloaded Papers</h1>""")
         
-        # Summary section
-        sources_list = list(set(p.source or "Unknown" for p in papers))
-        html_parts.append(f"""
-    <div class="summary">
-        <strong>统计 / Statistics:</strong><br>
-        总数 / Total: {len(papers)} 篇文献<br>
-        数据来源 / Sources: {', '.join(sources_list)}
-    </div>
-    
-    <h2>文献列表 / Paper List</h2>""")
-        
-        # Paper entries
-        for i, paper in enumerate(papers, 1):
-            # Authors
-            authors = ", ".join(paper.authors[:5])
-            if len(paper.authors) > 5:
-                authors += f" et al. ({len(paper.authors)} authors)"
-            
-            # Escape HTML special characters
+        for i, (paper, filepath) in enumerate(papers_with_paths, 1):
             title = paper.title.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
-            authors = authors.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+            authors = ", ".join(paper.authors[:5]).replace("&", "&amp;")
+            apa = self.citation_formatter.format(paper, "apa").replace("&", "&amp;")
+            gbt = self.citation_formatter.format(paper, "gb_t_7714").replace("&", "&amp;")
             
-            # Citation formats
-            citation_apa = self.citation_formatter.format(paper, "apa").replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
-            citation_gbt = self.citation_formatter.format(paper, "gb_t_7714").replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+            html_parts.append(f"""<div class="paper">
+<div class="title">{i}. {title}</div>
+<div class="info"><strong>作者:</strong> {authors} | <strong>年份:</strong> {paper.year or 'N/A'} | <strong>期刊:</strong> {paper.journal or 'N/A'}</div>
+<div class="citation"><span class="label">APA格式:</span> {apa}</div>
+<div class="citation"><span class="label">GB/T 7714:</span> {gbt}</div>
+<a href="file://{filepath}" class="file-link">打开本地文件</a>
+</div>""")
+        
+        html_parts.append("</body></html>")
+        
+        with open(filepath, "w", encoding="utf-8") as f:
+            f.write("\n".join(html_parts))
+    
+    def _generate_html_unavailable(self, papers: List[Paper], filepath: Path) -> None:
+        """Generate HTML for unavailable papers."""
+        html_parts = []
+        html_parts.append("""<!DOCTYPE html>
+<html lang="zh-CN">
+<head><meta charset="UTF-8"><title>未下载文献 - Unavailable Papers</title>
+<style>body{font-family:sans-serif;max-width:1200px;margin:0 auto;padding:20px;}
+h1{color:#FF9800;}.paper{background:white;padding:20px;margin:15px 0;border-radius:8px;box-shadow:0 2px 4px rgba(0,0,0,0.1);}
+.title{font-size:1.2em;font-weight:bold;color:#2196F3;margin-bottom:10px;}
+.info{color:#666;margin:10px 0;}.citation{background:#f5f5f5;padding:10px;margin:10px 0;border-radius:4px;}
+.label{font-weight:bold;color:#FF9800;}.link-btn{display:inline-block;margin-top:10px;margin-right:10px;padding:8px 16px;background:#2196F3;color:white;text-decoration:none;border-radius:4px;}
+.link-btn.doi{background:#FF9800;}</style></head>
+<body><h1>未下载文献 / Unavailable Papers</h1>""")
+        
+        for i, paper in enumerate(papers, 1):
+            title = paper.title.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+            authors = ", ".join(paper.authors[:5]).replace("&", "&amp;")
+            apa = self.citation_formatter.format(paper, "apa").replace("&", "&amp;")
+            gbt = self.citation_formatter.format(paper, "gb_t_7714").replace("&", "&amp;")
             
-            # Build paper HTML
-            paper_html = f"""
-    <div class="paper">
-        <div class="paper-title">{i}. {title}</div>
-        <div class="paper-info">
-            <span><strong>作者/Authors:</strong> {authors}</span>
-            <span><strong>年份/Year:</strong> {paper.year or 'N/A'}</span>
-            <span><strong>期刊/Journal:</strong> {paper.journal or 'N/A'}</span>
-            <span><strong>来源/Source:</strong> {paper.source or 'N/A'}</span>
-        </div>
-        <div class="citation-section">
-            <div class="citation-format">
-                <span class="citation-label">APA格式:</span>
-                <span class="citation-text">{citation_apa}</span>
-            </div>
-            <div class="citation-format">
-                <span class="citation-label">GB/T 7714:</span>
-                <span class="citation-text">{citation_gbt}</span>
-            </div>
-        </div>
-        <div class="links">"""
+            paper_html = f"""<div class="paper">
+<div class="title">{i}. {title}</div>
+<div class="info"><strong>作者:</strong> {authors} | <strong>年份:</strong> {paper.year or 'N/A'} | <strong>期刊:</strong> {paper.journal or 'N/A'}</div>
+<div class="citation"><span class="label">APA格式:</span> {apa}</div>
+<div class="citation"><span class="label">GB/T 7714:</span> {gbt}</div>"""
             
             if paper.source_url:
-                paper_html += f"""
-            <a href="{paper.source_url}" target="_blank">查看原文/View Paper</a>"""
-            
+                paper_html += f"""<a href="{paper.source_url}" class="link-btn" target="_blank">查看原文</a>"""
             if paper.doi:
-                paper_html += f"""
-            <a href="https://doi.org/{paper.doi}" class="doi" target="_blank">DOI: {paper.doi}</a>"""
+                paper_html += f"""<a href="https://doi.org/{paper.doi}" class="link-btn doi" target="_blank">DOI: {paper.doi}</a>"""
             
-            paper_html += """
-        </div>
-    </div>"""
-            
+            paper_html += "</div>"
             html_parts.append(paper_html)
         
-        # HTML footer
-        html_parts.append("""
-</body>
-</html>""")
+        html_parts.append("</body></html>")
         
-        # Write HTML file
         with open(filepath, "w", encoding="utf-8") as f:
             f.write("\n".join(html_parts))
     
