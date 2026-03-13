@@ -1,9 +1,10 @@
 """Semantic Scholar paper source with improved error handling."""
 
 import asyncio
+import time
 from datetime import datetime
 from typing import List, Optional, Dict, Any
-import aiohttp
+import requests
 from zhuai.models.paper import Paper
 from zhuai.sources.base import BaseSource
 
@@ -12,12 +13,13 @@ class SemanticScholarSource(BaseSource):
     """Semantic Scholar paper source."""
     
     BASE_URL = "https://api.semanticscholar.org/graph/v1"
+    RATE_LIMIT_DELAY = 1.0
     
     def __init__(self, api_key: Optional[str] = None, timeout: int = 30):
         """Initialize Semantic Scholar source."""
         super().__init__(timeout)
         self.api_key = api_key
-        self.session: Optional[aiohttp.ClientSession] = None
+        self._last_request_time: float = 0
     
     @property
     def name(self) -> str:
@@ -29,38 +31,40 @@ class SemanticScholarSource(BaseSource):
         """Check if source supports PDF download."""
         return True
     
-    async def _get_session(self) -> aiohttp.ClientSession:
-        """Get or create aiohttp session."""
-        if self.session is None or self.session.closed:
-            headers = {"User-Agent": "Zhuai/2.0"}
-            if self.api_key:
-                headers["x-api-key"] = self.api_key
-            self.session = aiohttp.ClientSession(
-                timeout=aiohttp.ClientTimeout(total=self.timeout),
-                headers=headers,
-            )
-        return self.session
-    
-    async def _make_request(
+    def _make_request(
         self,
         endpoint: str,
         params: Optional[Dict[str, Any]] = None,
     ) -> Dict[str, Any]:
         """Make request to Semantic Scholar API."""
-        session = await self._get_session()
         url = f"{self.BASE_URL}/{endpoint}"
         
-        async with session.get(url, params=params) as response:
-            if response.status == 429:  # Rate limit
-                await asyncio.sleep(1)
-                return await self._make_request(endpoint, params)
-            
-            response.raise_for_status()
-            return await response.json()
+        headers = {"User-Agent": "Zhuai/2.0"}
+        if self.api_key:
+            headers["x-api-key"] = self.api_key
+        
+        elapsed = time.time() - self._last_request_time
+        if elapsed < self.RATE_LIMIT_DELAY:
+            time.sleep(self.RATE_LIMIT_DELAY - elapsed)
+        
+        self._last_request_time = time.time()
+        
+        response = requests.get(url, params=params, headers=headers, timeout=self.timeout)
+        
+        if response.status_code == 429:
+            retry_after = int(response.headers.get("Retry-After", 5))
+            time.sleep(retry_after)
+            return self._make_request(endpoint, params)
+        
+        response.raise_for_status()
+        return response.json()
     
-    def _parse_paper(self, item: Dict[str, Any]) -> Paper:
+    def _parse_paper(self, item: Dict[str, Any]) -> Optional[Paper]:
         """Parse paper from API response."""
         title = item.get("title", "")
+        
+        if not title:
+            return None
         
         authors = []
         for author in item.get("authors", []):
@@ -127,46 +131,54 @@ class SemanticScholarSource(BaseSource):
         **kwargs,
     ) -> List[Paper]:
         """Search Semantic Scholar for papers."""
-        params = {
-            "query": query,
-            "limit": min(max_results, 100),  # API limit
-            "fields": "paperId,title,authors,abstract,year,venue,doi,pmid,arxivId,citationCount,fieldsOfStudy,publicationTypes,publicationVenue,openAccessPdf",
-        }
+        def _search() -> List[Paper]:
+            params = {
+                "query": query,
+                "limit": min(max_results, 100),
+                "fields": "paperId,title,authors,abstract,year,venue,doi,pmid,arxivId,citationCount,fieldsOfStudy,publicationTypes,publicationVenue,openAccessPdf",
+            }
+            
+            if kwargs.get("year"):
+                params["year"] = kwargs["year"]
+            
+            try:
+                data = self._make_request("paper/search", params)
+                items = data.get("data", [])
+                
+                papers = []
+                for item in items:
+                    try:
+                        paper = self._parse_paper(item)
+                        if paper:
+                            papers.append(paper)
+                    except Exception:
+                        continue
+                
+                return papers
+                
+            except Exception as e:
+                print(f"Error searching Semantic Scholar: {e}")
+                return []
         
-        if kwargs.get("year"):
-            params["year"] = kwargs["year"]
-        
-        try:
-            data = await self._make_request("paper/search", params)
-            items = data.get("data", [])
-            
-            papers = []
-            for item in items:
-                try:
-                    paper = self._parse_paper(item)
-                    papers.append(paper)
-                except Exception:
-                    continue
-            
-            return papers
-            
-        except Exception as e:
-            print(f"Error searching Semantic Scholar: {e}")
-            return []
+        loop = asyncio.get_event_loop()
+        return await loop.run_in_executor(None, _search)
     
     async def get_paper_by_id(self, paper_id: str) -> Optional[Paper]:
         """Get a paper by Semantic Scholar ID, DOI, or other ID."""
-        params = {
-            "fields": "paperId,title,authors,abstract,year,venue,doi,pmid,arxivId,citationCount,fieldsOfStudy,publicationTypes,publicationVenue,openAccessPdf",
-        }
+        def _get() -> Optional[Paper]:
+            params = {
+                "fields": "paperId,title,authors,abstract,year,venue,doi,pmid,arxivId,citationCount,fieldsOfStudy,publicationTypes,publicationVenue,openAccessPdf",
+            }
+            
+            try:
+                data = self._make_request(f"paper/{paper_id}", params)
+                return self._parse_paper(data)
+            except Exception:
+                return None
         
-        try:
-            data = await self._make_request(f"paper/{paper_id}", params)
-            return self._parse_paper(data)
-        except Exception:
-            return None
+        loop = asyncio.get_event_loop()
+        return await loop.run_in_executor(None, _get)
     
     async def close(self) -> None:
-        """Close aiohttp session."""
-        if self.session and not self.session.closed:
-            await self.session.close()
+        """Close resources."""
+        pass

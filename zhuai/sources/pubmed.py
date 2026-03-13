@@ -2,10 +2,11 @@
 
 import asyncio
 import json
+import time
 from datetime import datetime
 from typing import List, Optional, Dict, Any
 from xml.etree import ElementTree
-import aiohttp
+import requests
 from zhuai.models.paper import Paper
 from zhuai.sources.base import BaseSource
 
@@ -15,12 +16,13 @@ class PubMedSource(BaseSource):
     
     BASE_URL = "https://eutils.ncbi.nlm.nih.gov/entrez/eutils"
     PMC_URL = "https://www.ncbi.nlm.nih.gov/pmc/utils/oa/oa_fcgi.fcgi"
+    RATE_LIMIT_DELAY = 0.4
     
     def __init__(self, api_key: Optional[str] = None, timeout: int = 30):
         """Initialize PubMed source."""
         super().__init__(timeout)
         self.api_key = api_key
-        self.session: Optional[aiohttp.ClientSession] = None
+        self._last_request_time: float = 0
     
     @property
     def name(self) -> str:
@@ -32,16 +34,7 @@ class PubMedSource(BaseSource):
         """Check if source supports PDF download."""
         return True
     
-    async def _get_session(self) -> aiohttp.ClientSession:
-        """Get or create aiohttp session."""
-        if self.session is None or self.session.closed:
-            self.session = aiohttp.ClientSession(
-                timeout=aiohttp.ClientTimeout(total=self.timeout),
-                headers={"User-Agent": "Zhuai/2.0"},
-            )
-        return self.session
-    
-    async def _make_request(
+    def _make_request(
         self,
         endpoint: str,
         params: Dict[str, Any],
@@ -50,14 +43,18 @@ class PubMedSource(BaseSource):
         if self.api_key:
             params["api_key"] = self.api_key
         
-        session = await self._get_session()
         url = f"{self.BASE_URL}/{endpoint}"
         
-        async with session.get(url, params=params) as response:
-            response.raise_for_status()
-            return await response.text()
+        elapsed = time.time() - self._last_request_time
+        if elapsed < self.RATE_LIMIT_DELAY:
+            time.sleep(self.RATE_LIMIT_DELAY - elapsed)
+        
+        self._last_request_time = time.time()
+        response = requests.get(url, params=params, timeout=self.timeout)
+        response.raise_for_status()
+        return response.text
     
-    async def _get_pmc_pdf_url(self, pmcid: str) -> Optional[str]:
+    def _get_pmc_pdf_url(self, pmcid: str) -> Optional[str]:
         """Get PDF URL from PMC for open access articles.
         
         Args:
@@ -70,27 +67,28 @@ class PubMedSource(BaseSource):
             return None
         
         try:
-            session = await self._get_session()
             params = {"id": pmcid}
+            response = requests.get(self.PMC_URL, params=params, timeout=self.timeout)
             
-            async with session.get(self.PMC_URL, params=params) as response:
-                if response.status == 200:
-                    text = await response.text()
-                    root = ElementTree.fromstring(text)
-                    
-                    for record in root.findall(".//record"):
-                        for link in record.findall("link"):
-                            if link.get("format") == "pdf":
-                                return link.get("href")
+            if response.status_code == 200:
+                root = ElementTree.fromstring(response.text)
+                
+                for record in root.findall(".//record"):
+                    for link in record.findall("link"):
+                        if link.get("format") == "pdf":
+                            return link.get("href")
         except Exception:
             pass
         
         return None
     
-    def _parse_paper(self, article: ElementTree.Element) -> Paper:
+    def _parse_paper(self, article: ElementTree.Element) -> Optional[Paper]:
         """Parse paper from XML element."""
         title_elem = article.find(".//ArticleTitle")
         title = title_elem.text if title_elem is not None else ""
+        
+        if not title:
+            return None
         
         authors = []
         for author in article.findall(".//Author"):
@@ -176,8 +174,8 @@ class PubMedSource(BaseSource):
             pages=pages,
             doi=doi,
             pmid=pmid,
-            arxiv_id=pmcid,  # Store PMCID temporarily
-            pdf_url=None,  # Will be filled later
+            arxiv_id=pmcid,
+            pdf_url=None,
             source_url=source_url,
             citations=0,
             keywords=keywords,
@@ -194,103 +192,96 @@ class PubMedSource(BaseSource):
         **kwargs,
     ) -> List[Paper]:
         """Search PubMed for papers."""
-        # Search for articles
-        search_params = {
-            "db": "pubmed",
-            "term": f"{query} AND open access[filter]",
-            "retmax": max_results,
-            "retmode": "json",
-            "usehistory": "y",
-        }
-        
-        try:
-            search_response = await self._make_request("esearch.fcgi", search_params)
-            search_data = json.loads(search_response)
-            
-            id_list = search_data.get("esearchresult", {}).get("idlist", [])
-            
-            if not id_list:
-                # Try without open access filter
-                search_params["term"] = query
-                search_response = await self._make_request("esearch.fcgi", search_params)
-                search_data = json.loads(search_response)
-                id_list = search_data.get("esearchresult", {}).get("idlist", [])
-            
-            if not id_list:
-                return []
-            
-            # Fetch article details
-            fetch_params = {
+        def _search() -> List[Paper]:
+            search_params = {
                 "db": "pubmed",
-                "id": ",".join(id_list[:max_results]),
-                "retmode": "xml",
+                "term": f"{query} AND open access[filter]",
+                "retmax": max_results,
+                "retmode": "json",
+                "usehistory": "y",
             }
             
-            fetch_response = await self._make_request("efetch.fcgi", fetch_params)
-            
-            root = ElementTree.fromstring(fetch_response)
-            papers = []
-            pmcids_to_check = []
-            
-            for article in root.findall(".//PubmedArticle"):
-                try:
-                    paper = self._parse_paper(article)
-                    papers.append(paper)
-                    
-                    # Collect PMCID for PDF check
-                    if paper.arxiv_id:  # PMCID stored here
-                        pmcids_to_check.append((paper, paper.arxiv_id))
-                except Exception:
-                    continue
-            
-            # Get PMC PDF URLs in parallel
-            if pmcids_to_check:
-                tasks = [self._get_pmc_pdf_url(pmcid) for _, pmcid in pmcids_to_check]
-                pdf_urls = await asyncio.gather(*tasks)
+            try:
+                search_response = self._make_request("esearch.fcgi", search_params)
+                search_data = json.loads(search_response)
                 
-                for (paper, _), pdf_url in zip(pmcids_to_check, pdf_urls):
+                id_list = search_data.get("esearchresult", {}).get("idlist", [])
+                
+                if not id_list:
+                    search_params["term"] = query
+                    search_response = self._make_request("esearch.fcgi", search_params)
+                    search_data = json.loads(search_response)
+                    id_list = search_data.get("esearchresult", {}).get("idlist", [])
+                
+                if not id_list:
+                    return []
+                
+                fetch_params = {
+                    "db": "pubmed",
+                    "id": ",".join(id_list[:max_results]),
+                    "retmode": "xml",
+                }
+                
+                fetch_response = self._make_request("efetch.fcgi", fetch_params)
+                
+                root = ElementTree.fromstring(fetch_response)
+                papers = []
+                pmcids_to_check = []
+                
+                for article in root.findall(".//PubmedArticle"):
+                    try:
+                        paper = self._parse_paper(article)
+                        if paper:
+                            papers.append(paper)
+                            
+                            if paper.arxiv_id:
+                                pmcids_to_check.append((paper, paper.arxiv_id))
+                    except Exception:
+                        continue
+                
+                for paper, pmcid in pmcids_to_check:
+                    pdf_url = self._get_pmc_pdf_url(pmcid)
                     if pdf_url:
                         paper.pdf_url = pdf_url
-            
-            # Clean up PMCID from arxiv_id field
-            for paper in papers:
-                if paper.arxiv_id and paper.arxiv_id.startswith("PMC"):
-                    # Move PMCID to proper field if needed
-                    pass
-            
-            return papers
-            
-        except Exception as e:
-            print(f"Error searching PubMed: {e}")
-            return []
+                
+                return papers
+                
+            except Exception as e:
+                print(f"Error searching PubMed: {e}")
+                return []
+        
+        loop = asyncio.get_event_loop()
+        return await loop.run_in_executor(None, _search)
     
     async def get_paper_by_id(self, paper_id: str) -> Optional[Paper]:
         """Get a paper by PMID."""
-        fetch_params = {
-            "db": "pubmed",
-            "id": paper_id,
-            "retmode": "xml",
-        }
-        
-        try:
-            fetch_response = await self._make_request("efetch.fcgi", fetch_params)
-            root = ElementTree.fromstring(fetch_response)
-            article = root.find(".//PubmedArticle")
+        def _get() -> Optional[Paper]:
+            fetch_params = {
+                "db": "pubmed",
+                "id": paper_id,
+                "retmode": "xml",
+            }
             
-            if article:
-                paper = self._parse_paper(article)
+            try:
+                fetch_response = self._make_request("efetch.fcgi", fetch_params)
+                root = ElementTree.fromstring(fetch_response)
+                article = root.find(".//PubmedArticle")
                 
-                # Get PMC PDF if available
-                if paper.arxiv_id:  # PMCID
-                    paper.pdf_url = await self._get_pmc_pdf_url(paper.arxiv_id)
-                
-                return paper
-        except Exception:
-            pass
+                if article:
+                    paper = self._parse_paper(article)
+                    
+                    if paper and paper.arxiv_id:
+                        paper.pdf_url = self._get_pmc_pdf_url(paper.arxiv_id)
+                    
+                    return paper
+            except Exception:
+                pass
+            
+            return None
         
-        return None
+        loop = asyncio.get_event_loop()
+        return await loop.run_in_executor(None, _get)
     
     async def close(self) -> None:
-        """Close aiohttp session."""
-        if self.session and not self.session.closed:
-            await self.session.close()
+        """Close resources."""
+        pass
