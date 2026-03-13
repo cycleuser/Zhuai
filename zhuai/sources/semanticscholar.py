@@ -1,4 +1,4 @@
-"""Semantic Scholar paper source."""
+"""Semantic Scholar paper source with improved error handling."""
 
 import asyncio
 from datetime import datetime
@@ -14,12 +14,7 @@ class SemanticScholarSource(BaseSource):
     BASE_URL = "https://api.semanticscholar.org/graph/v1"
     
     def __init__(self, api_key: Optional[str] = None, timeout: int = 30):
-        """Initialize Semantic Scholar source.
-        
-        Args:
-            api_key: API key for higher rate limits.
-            timeout: Request timeout in seconds.
-        """
+        """Initialize Semantic Scholar source."""
         super().__init__(timeout)
         self.api_key = api_key
         self.session: Optional[aiohttp.ClientSession] = None
@@ -51,31 +46,20 @@ class SemanticScholarSource(BaseSource):
         endpoint: str,
         params: Optional[Dict[str, Any]] = None,
     ) -> Dict[str, Any]:
-        """Make request to Semantic Scholar API.
-        
-        Args:
-            endpoint: API endpoint.
-            params: Request parameters.
-            
-        Returns:
-            Response JSON.
-        """
+        """Make request to Semantic Scholar API."""
         session = await self._get_session()
         url = f"{self.BASE_URL}/{endpoint}"
         
         async with session.get(url, params=params) as response:
+            if response.status == 429:  # Rate limit
+                await asyncio.sleep(1)
+                return await self._make_request(endpoint, params)
+            
             response.raise_for_status()
             return await response.json()
     
     def _parse_paper(self, item: Dict[str, Any]) -> Paper:
-        """Parse paper from API response.
-        
-        Args:
-            item: API response item.
-            
-        Returns:
-            Paper object.
-        """
+        """Parse paper from API response."""
         title = item.get("title", "")
         
         authors = []
@@ -111,10 +95,9 @@ class SemanticScholarSource(BaseSource):
         publisher = publication_venue.get("publisher")
         
         pdf_url = None
-        if item.get("isOpenAccess"):
-            oa_url = item.get("openAccessPdf", {}).get("url")
-            if oa_url:
-                pdf_url = oa_url
+        open_access = item.get("openAccessPdf", {})
+        if open_access:
+            pdf_url = open_access.get("url")
         
         source_url = f"https://www.semanticscholar.org/paper/{item.get('paperId', '')}"
         
@@ -143,20 +126,11 @@ class SemanticScholarSource(BaseSource):
         max_results: int = 100,
         **kwargs,
     ) -> List[Paper]:
-        """Search Semantic Scholar for papers.
-        
-        Args:
-            query: Search query.
-            max_results: Maximum number of results.
-            **kwargs: Additional parameters.
-            
-        Returns:
-            List of papers.
-        """
+        """Search Semantic Scholar for papers."""
         params = {
             "query": query,
-            "limit": max_results,
-            "fields": "paperId,title,authors,abstract,year,venue,doi,pmid,arxivId,citationCount,fieldsOfStudy,publicationTypes,publicationVenue,isOpenAccess,openAccessPdf",
+            "limit": min(max_results, 100),  # API limit
+            "fields": "paperId,title,authors,abstract,year,venue,doi,pmid,arxivId,citationCount,fieldsOfStudy,publicationTypes,publicationVenue,openAccessPdf",
         }
         
         if kwargs.get("year"):
@@ -176,20 +150,14 @@ class SemanticScholarSource(BaseSource):
             
             return papers
             
-        except Exception:
+        except Exception as e:
+            print(f"Error searching Semantic Scholar: {e}")
             return []
     
     async def get_paper_by_id(self, paper_id: str) -> Optional[Paper]:
-        """Get a paper by Semantic Scholar ID, DOI, or other ID.
-        
-        Args:
-            paper_id: Paper identifier.
-            
-        Returns:
-            Paper if found, None otherwise.
-        """
+        """Get a paper by Semantic Scholar ID, DOI, or other ID."""
         params = {
-            "fields": "paperId,title,authors,abstract,year,venue,doi,pmid,arxivId,citationCount,fieldsOfStudy,publicationTypes,publicationVenue,isOpenAccess,openAccessPdf",
+            "fields": "paperId,title,authors,abstract,year,venue,doi,pmid,arxivId,citationCount,fieldsOfStudy,publicationTypes,publicationVenue,openAccessPdf",
         }
         
         try:

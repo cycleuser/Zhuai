@@ -1,0 +1,24 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head><meta charset="UTF-8"><title>已下载文献 - Downloaded Papers</title>
+<style>body{font-family:sans-serif;max-width:1200px;margin:0 auto;padding:20px;}
+h1{color:#4CAF50;}.paper{background:white;padding:20px;margin:15px 0;border-radius:8px;box-shadow:0 2px 4px rgba(0,0,0,0.1);}
+.title{font-size:1.2em;font-weight:bold;color:#2196F3;margin-bottom:10px;}
+.info{color:#666;margin:10px 0;}.citation{background:#f5f5f5;padding:10px;margin:10px 0;border-radius:4px;}
+.label{font-weight:bold;color:#4CAF50;}.file-link{display:inline-block;margin-top:10px;padding:8px 16px;background:#4CAF50;color:white;text-decoration:none;border-radius:4px;}</style></head>
+<body><h1>已下载文献 / Downloaded Papers</h1>
+<div class="paper">
+<div class="title">1. Quantum games and synchronicity</div>
+<div class="info"><strong>作者:</strong> Adina Goldberg | <strong>年份:</strong> 2024 | <strong>期刊:</strong> Quantum 10, 1964 (2026)</div>
+<div class="citation"><span class="label">APA格式:</span> Adina Goldberg (2024) Quantum games and synchronicity *Quantum 10, 1964 (2026)*. https://doi.org/10.22331/q-2026-01-14-1964</div>
+<div class="citation"><span class="label">GB/T 7714:</span> Adina GoldbergQuantum games and synchronicity. Quantum 10, 1964 (2026), 2024. DOI: 10.22331/q-2026-01-14-1964</div>
+<a href="file://test_dl/Quantum games and synchronicity.pdf" class="file-link">打开本地文件</a>
+</div>
+<div class="paper">
+<div class="title">2. Searching for Coherent States: From Origins to Quantum Gravity</div>
+<div class="info"><strong>作者:</strong> Pierre Martin-Dussaud | <strong>年份:</strong> 2020 | <strong>期刊:</strong> Quantum 5, 390 (2021)</div>
+<div class="citation"><span class="label">APA格式:</span> Pierre Martin-Dussaud (2020) Searching for Coherent States: From Origins to Quantum Gravity *Quantum 5, 390 (2021)*. https://doi.org/10.22331/q-2021-01-28-390</div>
+<div class="citation"><span class="label">GB/T 7714:</span> Pierre Martin-DussaudSearching for Coherent States: From Origins to Quantum Gravity. Quantum 5, 390 (2021), 2020. DOI: 10.22331/q-2021-01-28-390</div>
+<a href="file://test_dl/Searching for Coherent States_ From Origins to Quantum Gravity.pdf" class="file-link">打开本地文件</a>
+</div>
+</body></html>
