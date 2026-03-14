@@ -16,6 +16,7 @@ class PaperSearcher:
     """Main paper searcher class with comprehensive source support."""
     
     DEFAULT_SOURCES: Dict[str, Type[BaseSource]] = ALL_SOURCES
+    BROWSER_SOURCES = {"cnki", "wanfang", "vip", "baidu", "bing"}
     
     def __init__(
         self,
@@ -23,11 +24,25 @@ class PaperSearcher:
         timeout: int = 30,
         max_concurrent: int = 5,
         download_dir: str = "./downloads",
+        cookies_path: Optional[str] = None,
+        headless: bool = True,
         **source_configs,
     ):
-        """Initialize paper searcher."""
+        """Initialize paper searcher.
+        
+        Args:
+            sources: List of source names to use. Default: all sources.
+            timeout: Request timeout in seconds.
+            max_concurrent: Maximum concurrent downloads.
+            download_dir: Directory for downloaded files.
+            cookies_path: Path to cookies JSON file for browser sources.
+            headless: Run browser in headless mode.
+            **source_configs: Source-specific configurations.
+        """
         self.timeout = timeout
         self.max_concurrent = max_concurrent
+        self.cookies_path = cookies_path
+        self.headless = headless
         
         if sources is None:
             sources = list(self.DEFAULT_SOURCES.keys())
@@ -38,6 +53,11 @@ class PaperSearcher:
                 source_class = self.DEFAULT_SOURCES[source_name]
                 config = source_configs.get(source_name, {})
                 config["timeout"] = timeout
+                
+                if source_name in self.BROWSER_SOURCES:
+                    config["cookies_path"] = cookies_path
+                    config["headless"] = headless
+                
                 self.sources[source_name] = source_class(**config)
         
         self.download_manager = DownloadManager(
@@ -139,12 +159,9 @@ class PaperSearcher:
         Available papers: citations + local file path
         Unavailable papers: citations + download links
         """
-        from pathlib import Path
+        output_path = Path(output_dir)
+        output_path.mkdir(parents=True, exist_ok=True)
         
-        output_dir = Path(output_dir)
-        output_dir.mkdir(parents=True, exist_ok=True)
-        
-        # Separate available and unavailable papers
         available_papers = []
         unavailable_papers = []
         
@@ -160,13 +177,11 @@ class PaperSearcher:
             else:
                 unavailable_papers.append(paper)
         
-        # Export available papers (with local file paths)
         if available_papers:
-            self._export_available_papers(available_papers, output_dir)
+            self._export_available_papers(available_papers, output_path)
         
-        # Export unavailable papers (with download links)
         if unavailable_papers:
-            self._export_unavailable_papers(unavailable_papers, output_dir)
+            self._export_unavailable_papers(unavailable_papers, output_path)
     
     def _export_available_papers(self, papers_with_paths: List[tuple], output_dir: Path) -> None:
         """Export available papers with citations and file paths."""
@@ -249,7 +264,7 @@ h1{color:#4CAF50;}.paper{background:white;padding:20px;margin:15px 0;border-radi
 .label{font-weight:bold;color:#4CAF50;}.file-link{display:inline-block;margin-top:10px;padding:8px 16px;background:#4CAF50;color:white;text-decoration:none;border-radius:4px;}</style></head>
 <body><h1>已下载文献 / Downloaded Papers</h1>""")
         
-        for i, (paper, filepath) in enumerate(papers_with_paths, 1):
+        for i, (paper, local_path) in enumerate(papers_with_paths, 1):
             title = paper.title.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
             authors = ", ".join(paper.authors[:5]).replace("&", "&amp;")
             apa = self.citation_formatter.format(paper, "apa").replace("&", "&amp;")
@@ -260,7 +275,7 @@ h1{color:#4CAF50;}.paper{background:white;padding:20px;margin:15px 0;border-radi
 <div class="info"><strong>作者:</strong> {authors} | <strong>年份:</strong> {paper.year or 'N/A'} | <strong>期刊:</strong> {paper.journal or 'N/A'}</div>
 <div class="citation"><span class="label">APA格式:</span> {apa}</div>
 <div class="citation"><span class="label">GB/T 7714:</span> {gbt}</div>
-<a href="file://{filepath}" class="file-link">打开本地文件</a>
+<a href="file://{local_path}" class="file-link">打开本地文件</a>
 </div>""")
         
         html_parts.append("</body></html>")
@@ -365,6 +380,34 @@ h1{color:#FF9800;}.paper{background:white;padding:20px;margin:15px 0;border-radi
                 unique.append(paper)
         
         return unique
+    
+    def export_unavailable_citations(
+        self,
+        papers: List[Paper],
+        filepath: str,
+        style: str = "apa",
+    ) -> None:
+        """Export citations for papers without PDFs to a text file.
+        
+        Args:
+            papers: List of papers.
+            filepath: Output file path.
+            style: Citation style (apa, mla, chicago, gb_t_7714, bibtex).
+        """
+        unavailable = [p for p in papers if not p.can_download]
+        
+        with open(filepath, "w", encoding="utf-8") as f:
+            for i, paper in enumerate(unavailable, 1):
+                citation = self.citation_formatter.format(paper, style)
+                f.write(f"[{i}] {citation}\n")
+                
+                if paper.source_url:
+                    f.write(f"    URL: {paper.source_url}\n")
+                if paper.doi:
+                    f.write(f"    DOI: https://doi.org/{paper.doi}\n")
+                f.write("\n")
+        
+        print(f"Exported {len(unavailable)} citations to {filepath}")
     
     async def close(self) -> None:
         """Close all source connections."""

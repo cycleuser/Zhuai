@@ -194,6 +194,8 @@ class DownloadManager:
             "source", "article_type", "publisher", "language", "can_download",
         ]
         
+        Path(filepath).parent.mkdir(parents=True, exist_ok=True)
+        
         with open(filepath, "w", newline="", encoding="utf-8") as f:
             writer = csv.DictWriter(f, fieldnames=fieldnames, extrasaction="ignore")
             writer.writeheader()

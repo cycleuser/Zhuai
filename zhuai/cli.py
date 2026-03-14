@@ -3,12 +3,13 @@
 import click
 from typing import Optional, List
 from zhuai import PaperSearcher, CitationFormatter
+from zhuai.sources.browser_base import BrowserSource
 
 
 @click.group()
 @click.version_option(version="2.0.0")
 def main() -> None:
-    """Zhuai (拽) - A powerful academic paper search and download tool."""
+    """Zhuai (拽) - Academic paper search and download tool."""
     pass
 
 
@@ -21,6 +22,8 @@ def main() -> None:
 @click.option("--sources", "-s", multiple=True, help="Sources to search (default: all)")
 @click.option("--citation-style", "-c", default="apa", help="Citation style for unavailable papers")
 @click.option("--unavailable-output", "-u", default="unavailable.txt", help="Output file for unavailable papers")
+@click.option("--cookies-path", help="Path to cookies JSON file for login-required sources")
+@click.option("--headless/--no-headless", default=True, help="Run browser in headless mode")
 def search(
     query: str,
     max_results: int,
@@ -30,6 +33,8 @@ def search(
     sources: tuple,
     citation_style: str,
     unavailable_output: str,
+    cookies_path: Optional[str],
+    headless: bool,
 ) -> None:
     """Search for academic papers.
     
@@ -40,6 +45,8 @@ def search(
     searcher = PaperSearcher(
         sources=source_list,
         download_dir=download_dir,
+        cookies_path=cookies_path,
+        headless=headless,
     )
     
     click.echo(f"Searching for: {query}")
@@ -106,6 +113,12 @@ def sources() -> None:
     click.echo("Available sources:")
     for source in available:
         click.echo(f"  - {source}")
+
+
+@main.command()
+def cookies_help() -> None:
+    """Show instructions for exporting cookies from browser."""
+    click.echo(BrowserSource.export_cookies_instructions())
 
 
 if __name__ == "__main__":

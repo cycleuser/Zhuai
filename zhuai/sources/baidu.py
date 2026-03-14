@@ -1,18 +1,28 @@
-"""Baidu Academic source."""
+"""Baidu Academic source with human-like behavior."""
 
 import asyncio
+import random
 import re
 from datetime import datetime
-from typing import List, Optional
+from typing import List, Optional, Any
+from urllib.parse import quote
 from bs4 import BeautifulSoup
 from zhuai.models.paper import Paper
 from zhuai.sources.browser_base import BrowserSource
 
 
 class BaiduAcademicSource(BrowserSource):
-    """Baidu Academic source with browser automation."""
+    """Baidu Academic source with browser automation.
+    
+    Features:
+    - Human-like browsing behavior
+    - Cookie-based authentication support
+    """
     
     BASE_URL = "https://xueshu.baidu.com"
+    
+    MIN_DELAY = 3.0
+    MAX_DELAY = 6.0
     
     @property
     def name(self) -> str:
@@ -42,25 +52,31 @@ class BaiduAcademicSource(BrowserSource):
         """
         await self._init_browser()
         
-        search_url = f"{self.BASE_URL}/s?wd={query}"
-        await self._navigate(search_url)
-        
-        await asyncio.sleep(3)
-        
         papers = []
         
         try:
+            encoded_query = quote(query)
+            search_url = f"{self.BASE_URL}/s?wd={encoded_query}&tn=SE_baiduxueshu_c1gjeupa"
+            
+            await self._navigate(search_url)
+            await self._scroll_page(times=2)
+            await self._human_delay()
+            
             content = await self.page.content()
             soup = BeautifulSoup(content, "lxml")
             
-            items = soup.find_all("div", class_="result")[:max_results]
+            items = self._find_result_items(soup, max_results)
             
-            for item in items:
+            for idx, item in enumerate(items):
+                if idx > 0:
+                    await self._human_delay()
+                
                 try:
-                    paper = self._parse_result(item)
+                    paper = await self._parse_result(item, idx)
                     if paper:
                         papers.append(paper)
-                except Exception:
+                except Exception as e:
+                    print(f"Error parsing Baidu Academic result {idx}: {e}")
                     continue
                     
         except Exception as e:
@@ -68,44 +84,34 @@ class BaiduAcademicSource(BrowserSource):
         
         return papers
     
-    def _parse_result(self, item) -> Optional[Paper]:
+    def _find_result_items(self, soup: BeautifulSoup, max_results: int) -> List[Any]:
+        """Find result items from page."""
+        selectors = [
+            ".result",
+            ".result-op",
+            "div[class*='result']",
+            ".sc_result",
+        ]
+        
+        items = []
+        for selector in selectors:
+            found = soup.select(selector)
+            if found:
+                items = found[:max_results]
+                break
+        
+        return items
+    
+    async def _parse_result(self, item, index: int) -> Optional[Paper]:
         """Parse a single search result."""
-        title_elem = item.find("a", class_="title")
-        if not title_elem:
-            title_elem = item.find("h3")
-            if not title_elem:
-                return None
+        title = self._extract_title(item)
+        if not title:
+            return None
         
-        title = title_elem.get_text(strip=True)
-        
-        authors = []
-        author_elem = item.find("div", class_="author")
-        if author_elem:
-            authors = [a.strip() for a in author_elem.get_text(strip=True).split("，") if a.strip()]
-        
-        journal = None
-        source_elem = item.find("span", class_="source")
-        if source_elem:
-            journal = source_elem.get_text(strip=True)
-        
-        year = None
-        date_elem = item.find("span", class_="year")
-        if date_elem:
-            date_text = date_elem.get_text(strip=True)
-            year_match = re.search(r"\d{4}", date_text)
-            if year_match:
-                year = int(year_match.group())
-        
-        abstract = None
-        abstract_elem = item.find("div", class_="abstract")
-        if abstract_elem:
-            abstract = abstract_elem.get_text(strip=True)
-        
-        source_url = None
-        if title_elem and title_elem.get("href"):
-            source_url = title_elem["href"]
-            if not source_url.startswith("http"):
-                source_url = self.BASE_URL + source_url
+        authors = self._extract_authors(item)
+        journal, year = self._extract_source_info(item)
+        abstract = self._extract_abstract(item)
+        source_url = self._extract_source_url(item)
         
         publication_date = datetime(year, 1, 1) if year else None
         
@@ -121,6 +127,94 @@ class BaiduAcademicSource(BrowserSource):
             source=self.name,
             language="zh",
         )
+    
+    def _extract_title(self, item) -> str:
+        """Extract title from result item."""
+        title_selectors = [
+            ".t a",
+            "h3 a",
+            "a.title",
+            ".title",
+        ]
+        
+        for selector in title_selectors:
+            elem = item.select_one(selector)
+            if elem:
+                title = elem.get("title") or elem.get_text(strip=True)
+                if title:
+                    return title
+        
+        return ""
+    
+    def _extract_authors(self, item) -> List[str]:
+        """Extract authors from result item."""
+        author_selectors = [
+            ".author",
+            ".authors",
+            ".sc_author",
+        ]
+        
+        for selector in author_selectors:
+            elem = item.select_one(selector)
+            if elem:
+                text = elem.get_text(strip=True)
+                authors = re.split(r'[;；,，、\s]+', text)
+                return [a.strip() for a in authors if a.strip()]
+        
+        return []
+    
+    def _extract_source_info(self, item) -> tuple:
+        """Extract journal and year from result item."""
+        journal = None
+        year = None
+        
+        source_elem = item.select_one(".source, .journal, .sc_journal")
+        if source_elem:
+            text = source_elem.get_text(strip=True)
+            journal = text
+            
+            year_match = re.search(r'\d{4}', text)
+            if year_match:
+                year = int(year_match.group())
+        
+        date_elem = item.select_one(".date, .year, .sc_year")
+        if date_elem:
+            text = date_elem.get_text(strip=True)
+            year_match = re.search(r'\d{4}', text)
+            if year_match:
+                year = int(year_match.group())
+        
+        return journal, year
+    
+    def _extract_abstract(self, item) -> Optional[str]:
+        """Extract abstract from result item."""
+        abstract_selectors = [
+            ".abstract",
+            ".content",
+            ".sc_abstract",
+        ]
+        
+        for selector in abstract_selectors:
+            elem = item.select_one(selector)
+            if elem:
+                return elem.get_text(strip=True)
+        
+        return None
+    
+    def _extract_source_url(self, item) -> Optional[str]:
+        """Extract source URL from result item."""
+        title_link = item.select_one("a[href]")
+        if title_link:
+            href = title_link.get("href", "")
+            if href:
+                if href.startswith("http"):
+                    return href
+                elif href.startswith("//"):
+                    return f"https:{href}"
+                else:
+                    return f"{self.BASE_URL}{href}"
+        
+        return None
     
     async def get_paper_by_id(self, paper_id: str) -> Optional[Paper]:
         """Get paper by ID."""

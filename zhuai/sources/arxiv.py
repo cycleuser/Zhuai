@@ -1,15 +1,26 @@
-"""arXiv paper source."""
+"""arXiv paper source using HTTP API."""
 
 import asyncio
+import time
+import re
 from datetime import datetime
-from typing import List, Optional
-import arxiv
+from typing import List, Optional, Dict, Any
+from xml.etree import ElementTree
+import requests
 from zhuai.models.paper import Paper
 from zhuai.sources.base import BaseSource
 
 
 class ArxivSource(BaseSource):
-    """arXiv paper source."""
+    """arXiv paper source using HTTP API."""
+    
+    BASE_URL = "http://export.arxiv.org/api/query"
+    RATE_LIMIT_DELAY = 3.0
+    
+    def __init__(self, timeout: int = 30):
+        """Initialize arXiv source."""
+        super().__init__(timeout)
+        self._last_request_time: float = 0
     
     @property
     def name(self) -> str:
@@ -21,89 +32,163 @@ class ArxivSource(BaseSource):
         """Check if source supports PDF download."""
         return True
     
+    def _make_request(self, params: Dict[str, Any]) -> str:
+        """Make request to arXiv API with rate limiting."""
+        elapsed = time.time() - self._last_request_time
+        if elapsed < self.RATE_LIMIT_DELAY:
+            time.sleep(self.RATE_LIMIT_DELAY - elapsed)
+        
+        self._last_request_time = time.time()
+        
+        response = requests.get(self.BASE_URL, params=params, timeout=self.timeout)
+        response.raise_for_status()
+        return response.text
+    
+    def _parse_entry(self, entry: ElementTree.Element) -> Optional[Paper]:
+        """Parse a single arXiv entry."""
+        ns = {"atom": "http://www.w3.org/2005/Atom"}
+        
+        title_elem = entry.find("atom:title", ns)
+        title = title_elem.text.strip() if title_elem is not None and title_elem.text else ""
+        
+        if not title:
+            return None
+        
+        authors = []
+        for author in entry.findall("atom:author", ns):
+            name_elem = author.find("atom:name", ns)
+            if name_elem is not None and name_elem.text:
+                authors.append(name_elem.text.strip())
+        
+        abstract = None
+        summary_elem = entry.find("atom:summary", ns)
+        if summary_elem is not None and summary_elem.text:
+            abstract = summary_elem.text.strip()
+        
+        publication_date = None
+        published_elem = entry.find("atom:published", ns)
+        if published_elem is not None and published_elem.text:
+            try:
+                publication_date = datetime.fromisoformat(published_elem.text.replace("Z", "+00:00"))
+            except ValueError:
+                pass
+        
+        arxiv_id = None
+        doi = None
+        journal = None
+        
+        id_elem = entry.find("atom:id", ns)
+        if id_elem is not None and id_elem.text:
+            arxiv_id = id_elem.text.split("/")[-1]
+        
+        for link in entry.findall("atom:link", ns):
+            href = link.get("href", "")
+            rel = link.get("rel", "")
+            if rel == "alternate" and "arxiv.org/abs" in href:
+                arxiv_id = href.split("/")[-1]
+        
+        journal_elem = entry.find("atom:journal_ref", ns)
+        if journal_elem is not None and journal_elem.text:
+            journal = journal_elem.text.strip()
+        
+        for elem in entry.iter():
+            if elem.text and "doi:" in elem.text.lower():
+                doi_match = re.search(r'10\.\d{4,}/[^\s]+', elem.text)
+                if doi_match:
+                    doi = doi_match.group()
+                    break
+        
+        pdf_url = f"https://arxiv.org/pdf/{arxiv_id}" if arxiv_id else None
+        source_url = f"https://arxiv.org/abs/{arxiv_id}" if arxiv_id else None
+        
+        keywords = []
+        for cat in entry.findall("atom:category", ns):
+            term = cat.get("term", "")
+            if term:
+                keywords.append(term)
+        
+        return Paper(
+            title=title,
+            authors=authors,
+            abstract=abstract,
+            publication_date=publication_date,
+            journal=journal,
+            doi=doi,
+            arxiv_id=arxiv_id,
+            pdf_url=pdf_url,
+            source_url=source_url,
+            citations=0,
+            keywords=keywords,
+            source=self.name,
+            article_type="preprint",
+        )
+    
     async def search(
         self,
         query: str,
         max_results: int = 100,
         **kwargs,
     ) -> List[Paper]:
-        """Search arXiv for papers.
-        
-        Args:
-            query: Search query.
-            max_results: Maximum number of results.
-            **kwargs: Additional parameters.
+        """Search arXiv for papers."""
+        def _search() -> List[Paper]:
+            params = {
+                "search_query": f"all:{query}",
+                "start": 0,
+                "max_results": max_results,
+                "sortBy": "relevance",
+                "sortOrder": "descending",
+            }
             
-        Returns:
-            List of papers.
-        """
+            try:
+                response_text = self._make_request(params)
+                root = ElementTree.fromstring(response_text)
+                
+                ns = {"atom": "http://www.w3.org/2005/Atom"}
+                entries = root.findall("atom:entry", ns)
+                
+                papers = []
+                for entry in entries:
+                    try:
+                        paper = self._parse_entry(entry)
+                        if paper:
+                            papers.append(paper)
+                    except Exception:
+                        continue
+                
+                return papers
+                
+            except Exception as e:
+                print(f"Error searching arXiv: {e}")
+                return []
+        
         loop = asyncio.get_event_loop()
-        
-        def _search():
-            search = arxiv.Search(
-                query=query,
-                max_results=max_results,
-                sort_by=arxiv.SortCriterion.Relevance,
-                sort_order=arxiv.SortOrder.Descending,
-            )
-            return list(search.results())
-        
-        results = await loop.run_in_executor(None, _search)
-        
-        papers = []
-        for result in results:
-            paper = Paper(
-                title=result.title,
-                authors=[author.name for author in result.authors],
-                abstract=result.summary,
-                publication_date=result.published,
-                journal=result.journal_ref,
-                doi=result.doi,
-                arxiv_id=result.entry_id.split("/")[-1],
-                pdf_url=result.pdf_url,
-                source_url=result.entry_id,
-                citations=0,
-                keywords=result.categories if hasattr(result, "categories") else [],
-                source=self.name,
-                article_type="preprint",
-            )
-            papers.append(paper)
-        
-        return papers
+        return await loop.run_in_executor(None, _search)
     
     async def get_paper_by_id(self, paper_id: str) -> Optional[Paper]:
-        """Get a paper by arXiv ID.
-        
-        Args:
-            paper_id: arXiv ID.
+        """Get a paper by arXiv ID."""
+        def _get() -> Optional[Paper]:
+            params = {
+                "id_list": paper_id,
+            }
             
-        Returns:
-            Paper if found, None otherwise.
-        """
+            try:
+                response_text = self._make_request(params)
+                root = ElementTree.fromstring(response_text)
+                
+                ns = {"atom": "http://www.w3.org/2005/Atom"}
+                entry = root.find("atom:entry", ns)
+                
+                if entry is not None:
+                    return self._parse_entry(entry)
+                
+            except Exception as e:
+                print(f"Error getting arXiv paper {paper_id}: {e}")
+            
+            return None
+        
         loop = asyncio.get_event_loop()
-        
-        def _get():
-            search = arxiv.Search(id_list=[paper_id])
-            results = list(search.results())
-            return results[0] if results else None
-        
-        result = await loop.run_in_executor(None, _get)
-        
-        if result:
-            return Paper(
-                title=result.title,
-                authors=[author.name for author in result.authors],
-                abstract=result.summary,
-                publication_date=result.published,
-                journal=result.journal_ref,
-                doi=result.doi,
-                arxiv_id=paper_id,
-                pdf_url=result.pdf_url,
-                source_url=result.entry_id,
-                citations=0,
-                keywords=result.categories if hasattr(result, "categories") else [],
-                source=self.name,
-                article_type="preprint",
-            )
-        
-        return None
+        return await loop.run_in_executor(None, _get)
+    
+    async def close(self) -> None:
+        """Close resources."""
+        pass
