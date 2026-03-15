@@ -6,7 +6,7 @@
 [![License](https://img.shields.io/badge/License-GPL%20v3-green.svg)](LICENSE)
 [![GitHub](https://img.shields.io/badge/GitHub-cycleuser%2FZhuai-blue.svg)](https://github.com/cycleuser/Zhuai)
 
-**Zhuai** - A Simple Tool for Finding Academic Papers
+**Zhuai** - A Simple Tool for Finding Academic Papers with Vision AI
 
 [中文](README_CN.md) | [English](README_EN.md)
 
@@ -16,29 +16,28 @@
 
 ## What is this?
 
-Zhuai is a simple tool that helps you search and download academic papers from various sources. Clean design, easy to use.
+Zhuai is a simple tool that helps you search and download academic papers from various sources. It uses Vision AI to automatically handle CAPTCHAs and parse pages, making the entire process fully automated without any human intervention.
 
-## What can it do?
+## Key Features
 
-- Search papers from multiple sources (arXiv, PubMed, CNKI, Wanfang, etc.)
-- Automatically download PDF files
-- Export search results to CSV
-- Generate citation formats
+- **Fully Automated**: Vision AI handles CAPTCHAs and page parsing automatically
+- **Multi-source Search**: arXiv, PubMed, CNKI, Wanfang, VIP, CrossRef, etc.
+- **PDF Download**: Automatic PDF downloading with duplicate detection
+- **Bilingual Citations**: APA + GB/T 7714 formats for Chinese and English
+- **CSV/HTML Export**: Complete metadata with clickable links
 
 ## Supported Sources
 
-**International:**
+**International (API-based, no CAPTCHA):**
 - arXiv - Preprints
 - PubMed - Biomedical literature
 - CrossRef - DOI database
 - Semantic Scholar - Academic search
-- Bing Academic - Microsoft Academic
 
-**Chinese:**
-- CNKI (知网)
-- Wanfang Data (万方)
-- VIP (维普)
-- Baidu Academic (百度学术)
+**Chinese (Vision AI powered):**
+- CNKI (知网) - with automatic CAPTCHA solving
+- Wanfang Data (万方) - with automatic CAPTCHA solving
+- VIP (维普) - with automatic CAPTCHA solving
 
 ## Installation
 
@@ -46,8 +45,15 @@ Zhuai is a simple tool that helps you search and download academic papers from v
 # Install the tool
 pip install zhuai
 
-# For Chinese sources, also install the browser
+# Install browser for Chinese sources
 playwright install chromium
+
+# Install Ollama for Vision AI (required for Chinese sources)
+# macOS/Linux:
+curl -fsSL https://ollama.com/install.sh | sh
+
+# Download vision model
+ollama pull gemma3:4b
 ```
 
 Or install from source:
@@ -61,17 +67,30 @@ playwright install chromium
 
 ## Usage
 
-### Command Line
+### Basic Search
 
 ```bash
-# Search papers
-zhuai search "deep learning"
+# International sources (fast, no CAPTCHA)
+zhuai search "deep learning" -s arxiv -s pubmed --download
 
-# Search from specific sources
-zhuai search "artificial intelligence" --sources arxiv semanticscholar
+# Chinese sources (Vision AI handles CAPTCHA automatically)
+zhuai search "定和效应" -s cnki --max-results 10
 
-# Search and download
-zhuai search "summation effect" --download
+# Multiple sources
+zhuai search "artificial intelligence" -s arxiv -s cnki -s pubmed
+```
+
+### Advanced Options
+
+```bash
+# Specify vision model
+zhuai search "高维度空间距离" -s cnki --vision-model gemma3:4b
+
+# Import browser cookies for login
+zhuai search "定和效应" -s cnki --import-browser firefox
+
+# Adjust number of results
+zhuai search "machine learning" -s arxiv --max-results 50 --download
 
 # List available sources
 zhuai sources
@@ -82,68 +101,72 @@ zhuai sources
 ```python
 from zhuai import PaperSearcher
 
-# Create searcher
-searcher = PaperSearcher()
+# Create searcher with vision model
+searcher = PaperSearcher(
+    sources=["arxiv", "cnki", "pubmed"],
+    vision_model="gemma3:4b"
+)
 
 # Search papers
 papers = searcher.search_sync("summation effect", max_results=50)
 
 # Download PDFs
-searcher.download_papers_sync(papers)
+results = searcher.download_papers_sync(papers)
 
 # Save results
 searcher.export_to_csv(papers, "results.csv")
 
-# Export citations for unavailable papers
-searcher.export_unavailable_citations(papers, "citations.txt")
+# Export citations
+searcher.export_unavailable_citations(papers, "citations.txt", style="apa")
 ```
 
-### Choose Specific Sources
+## Vision AI Features
 
-```python
-# Use only Chinese sources
-searcher = PaperSearcher(sources=["cnki", "wanfang", "baidu"])
+Zhuai uses local Ollama vision models to achieve full automation:
 
-# Use only API sources (faster)
-searcher = PaperSearcher(sources=["arxiv", "pubmed", "semanticscholar"])
+1. **Automatic CAPTCHA Detection**: Screenshots pages and analyzes for CAPTCHAs
+2. **CAPTCHA Solving**:
+   - Slider CAPTCHA: Calculates drag distance and simulates mouse movement
+   - Click CAPTCHA: Identifies click positions
+   - Text CAPTCHA: OCR recognition and input
+3. **Page Parsing**: When CSS selectors fail, Vision AI extracts paper info from screenshots
 
-# Custom combination
-searcher = PaperSearcher(sources=["arxiv", "cnki", "pubmed"])
-```
+### Supported Vision Models
+
+- `gemma3:4b` (default, recommended)
+- `gemma3:1b` (faster, less accurate)
+- Any Ollama-compatible vision model
 
 ## Citation Formats
-
-Supports common citation formats:
 
 - **APA** - American Psychological Association
 - **MLA** - Modern Language Association
 - **Chicago** - Chicago Manual of Style
 - **GB/T 7714** - Chinese National Standard
 - **BibTeX** - LaTeX format
-- **Simple** - Simple format
 
 ## Output
 
 ### CSV File
-Contains paper details: title, authors, year, journal, DOI, abstract, etc.
+Contains: title, authors, year, journal, DOI, PDF URL, source, language
 
 ### Citation Files
-For papers without PDF access, two files are generated:
-
-1. **Text file** (unavailable_citations.txt): Simple text format
-2. **CSV file** (unavailable_citations_with_citations.csv): Contains:
-   - Paper basic info (title, authors, year, journal, etc.)
-   - Download links and DOI
-   - 5 international standard citation formats (APA, GB/T 7714, MLA, Chicago, BibTeX)
-
-This CSV file includes bilingual standard citation formats for easy use.
+For papers without PDF access:
+- `unavailable.txt` - Text format citations
+- `results.csv` - Complete metadata with citations
 
 ## Technical Details
 
-- Async concurrent operations for efficiency
-- Browser automation for interactive websites
-- Smart deduplication
-- Complete type hints
+- **Async Operations**: Concurrent searches for efficiency
+- **Playwright Stealth**: Hides automation traces
+- **Vision AI**: Ollama-based local vision models
+- **Type Hints**: Complete type annotations
+
+## Requirements
+
+- Python 3.8+
+- Ollama with vision model (for Chinese sources)
+- Chromium browser (auto-installed by Playwright)
 
 ## Development
 
@@ -162,11 +185,11 @@ black . && isort .
 
 GPL v3 License
 
-## Questions?
+## Links
 
 - Issues: https://github.com/cycleuser/Zhuai/issues
 - Code: https://github.com/cycleuser/Zhuai
 
 ---
 
-**Zhuai** - Simple and easy, that's it
+**Zhuai** - Simple, automated, no human intervention needed

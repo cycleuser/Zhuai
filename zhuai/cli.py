@@ -23,7 +23,11 @@ def main() -> None:
 @click.option("--citation-style", "-c", default="apa", help="Citation style for unavailable papers")
 @click.option("--unavailable-output", "-u", default="unavailable.txt", help="Output file for unavailable papers")
 @click.option("--cookies-path", help="Path to cookies JSON file for login-required sources")
+@click.option("--import-browser", type=click.Choice(["chrome", "edge", "firefox"]), help="Import cookies from browser")
+@click.option("--import-profile", help="Browser profile name to import (default: Default)")
+@click.option("--user-data-dir", help="Custom browser user data directory")
 @click.option("--headless/--no-headless", default=True, help="Run browser in headless mode")
+@click.option("--vision-model", default="gemma3:4b", help="Ollama vision model for CAPTCHA solving")
 def search(
     query: str,
     max_results: int,
@@ -34,7 +38,11 @@ def search(
     citation_style: str,
     unavailable_output: str,
     cookies_path: Optional[str],
+    import_browser: Optional[str],
+    import_profile: Optional[str],
+    user_data_dir: Optional[str],
     headless: bool,
+    vision_model: str,
 ) -> None:
     """Search for academic papers.
     
@@ -47,6 +55,10 @@ def search(
         download_dir=download_dir,
         cookies_path=cookies_path,
         headless=headless,
+        import_browser=import_browser,
+        import_profile=import_profile,
+        user_data_dir=user_data_dir,
+        vision_model=vision_model,
     )
     
     click.echo(f"Searching for: {query}")
@@ -113,6 +125,15 @@ def sources() -> None:
     click.echo("Available sources:")
     for source in available:
         click.echo(f"  - {source}")
+
+
+@main.command()
+def browsers() -> None:
+    """List browsers that can be imported."""
+    browsers_list = BrowserSource.list_importable_browsers()
+    click.echo("Browsers that can be imported:")
+    for browser in browsers_list:
+        click.echo(f"  - {browser['id']}: {browser['name']}")
 
 
 @main.command()

@@ -26,6 +26,10 @@ class PaperSearcher:
         download_dir: str = "./downloads",
         cookies_path: Optional[str] = None,
         headless: bool = True,
+        import_browser: Optional[str] = None,
+        import_profile: Optional[str] = None,
+        user_data_dir: Optional[str] = None,
+        vision_model: Optional[str] = "gemma3:4b",
         **source_configs,
     ):
         """Initialize paper searcher.
@@ -37,12 +41,20 @@ class PaperSearcher:
             download_dir: Directory for downloaded files.
             cookies_path: Path to cookies JSON file for browser sources.
             headless: Run browser in headless mode.
+            import_browser: Browser to import cookies from (chrome, edge, firefox).
+            import_profile: Browser profile name to import.
+            user_data_dir: Custom browser user data directory.
+            vision_model: Ollama vision model for CAPTCHA solving.
             **source_configs: Source-specific configurations.
         """
         self.timeout = timeout
         self.max_concurrent = max_concurrent
         self.cookies_path = cookies_path
         self.headless = headless
+        self.import_browser = import_browser
+        self.import_profile = import_profile
+        self.user_data_dir = user_data_dir
+        self.vision_model = vision_model
         
         if sources is None:
             sources = list(self.DEFAULT_SOURCES.keys())
@@ -57,6 +69,10 @@ class PaperSearcher:
                 if source_name in self.BROWSER_SOURCES:
                     config["cookies_path"] = cookies_path
                     config["headless"] = headless
+                    config["import_browser"] = import_browser
+                    config["import_profile"] = import_profile
+                    config["user_data_dir"] = user_data_dir
+                    config["vision_model"] = vision_model
                 
                 self.sources[source_name] = source_class(**config)
         
