@@ -1,0 +1,21 @@
+title,issn,eissn,publisher,url,jcr_quartile,jcr_if,jcr_category,jcr_rank,cas_quartile,cas_top,ei_indexed,open_access
+Nature,0028-0836,1476-4687,Nature Publishing Group,https://www.nature.com/,Q1,64.8,Multidisciplinary Sciences,1/73,1区,True,True,False
+Science,0036-8075,1095-9203,American Association for the Advancement of Science,https://www.science.org/,Q1,56.9,Multidisciplinary Sciences,2/73,1区,True,True,False
+Cell,0092-8674,1097-4172,Cell Press,https://www.cell.com/,Q1,66.85,Biochemistry & Molecular Biology,1/297,1区,True,False,False
+The Lancet,0140-6736,1474-547X,Elsevier,https://www.thelancet.com/,Q1,168.9,"Medicine, General & Internal",1/167,1区,True,False,False
+New England Journal of Medicine,0028-4793,1533-4406,Massachusetts Medical Society,https://www.nejm.org/,Q1,158.5,"Medicine, General & Internal",2/167,1区,True,False,False
+Nature Machine Intelligence,2522-5839,,Nature Publishing Group,https://www.nature.com/natmachintell/,Q1,23.8,"Computer Science, Artificial Intelligence",3/145,1区,False,False,True
+IEEE Transactions on Pattern Analysis and Machine Intelligence,0162-8828,1939-3539,IEEE,https://ieeexplore.ieee.org/xpl/RecentIssue.jsp?punumber=34,Q1,24.314,"Computer Science, Artificial Intelligence",2/145,1区,True,True,False
+Journal of Machine Learning Research,1532-4435,1533-7928,Microtome Publishing,https://www.jmlr.org/,Q1,6.0,"Computer Science, Artificial Intelligence",25/145,2区,False,True,True
+Artificial Intelligence,0004-3702,1872-6627,Elsevier,https://www.sciencedirect.com/journal/artificial-intelligence,Q1,14.05,"Computer Science, Artificial Intelligence",6/145,1区,False,True,False
+ACM Computing Surveys,0360-0300,1557-7341,ACM,https://dl.acm.org/journal/csur,Q1,16.6,"Computer Science, Theory & Methods",1/111,2区,False,True,False
+Physical Review Letters,0031-9007,1079-7114,American Physical Society,https://journals.aps.org/prl/,Q1,9.185,"Physics, Multidisciplinary",6/86,1区,True,True,False
+Journal of the American Chemical Society,0002-7863,1520-5126,American Chemical Society,https://pubs.acs.org/journal/jacsat,Q1,16.383,"Chemistry, Multidisciplinary",7/179,1区,True,True,False
+Angewandte Chemie International Edition,1433-7851,1521-3773,Wiley-VCH,https://onlinelibrary.wiley.com/journal/15213773,Q1,16.823,"Chemistry, Multidisciplinary",6/179,1区,True,True,False
+Advanced Materials,0935-9648,1521-4095,Wiley-VCH,https://onlinelibrary.wiley.com/journal/15214095,Q1,29.4,"Materials Science, Multidisciplinary",4/346,1区,True,True,False
+Nano Letters,1530-6984,1530-6992,American Chemical Society,https://pubs.acs.org/journal/nalefd,Q1,12.262,Nanoscience & Nanotechnology,7/107,1区,True,True,False
+IEEE Transactions on Neural Networks and Learning Systems,2162-237X,2162-2388,IEEE,https://ieeexplore.ieee.org/xpl/RecentIssue.jsp?punumber=5962385,Q1,10.451,"Computer Science, Artificial Intelligence",11/145,1区,False,True,False
+Neural Networks,0893-6080,1879-2782,Elsevier,https://www.sciencedirect.com/journal/neural-networks,Q1,7.8,"Computer Science, Artificial Intelligence",20/145,2区,False,True,False
+Pattern Recognition,0031-3203,1873-5159,Elsevier,https://www.sciencedirect.com/journal/pattern-recognition,Q1,8.518,"Computer Science, Artificial Intelligence",17/145,1区,False,True,False
+IEEE Transactions on Image Processing,1057-7149,1941-0042,IEEE,https://ieeexplore.ieee.org/xpl/RecentIssue.jsp?punumber=83,Q1,10.6,"Computer Science, Artificial Intelligence",10/145,1区,False,True,False
+Chemical Reviews,0009-2665,1520-6890,American Chemical Society,https://pubs.acs.org/journal/chreay,Q1,62.1,"Chemistry, Multidisciplinary",2/179,1区,True,True,False
