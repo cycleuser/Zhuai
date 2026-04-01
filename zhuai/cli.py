@@ -18,7 +18,8 @@ def main() -> None:
 @click.argument("query")
 @click.option("--max-results", "-n", default=50, help="Maximum number of results")
 @click.option("--output", "-o", default="results.csv", help="Output CSV file")
-@click.option("--download", "-d", is_flag=True, help="Download PDFs")
+@click.option("--download", "-d", is_flag=True, help="Download papers")
+@click.option("--download-format", type=click.Choice(["pdf", "html", "markdown", "all"]), default="pdf", help="Download format (pdf/html/markdown/all)")
 @click.option("--download-dir", default="./downloads", help="Download directory")
 @click.option("--sources", "-s", multiple=True, help="Sources to search (default: all)")
 @click.option("--citation-style", "-c", default="apa", help="Citation style for unavailable papers")
@@ -28,7 +29,6 @@ def main() -> None:
 @click.option("--import-profile", help="Browser profile name to import (default: Default)")
 @click.option("--user-data-dir", help="Custom browser user data directory")
 @click.option("--headless/--no-headless", default=True, help="Run browser in headless mode")
-@click.option("--vision-model", default="gemma3:4b", help="Ollama vision model for CAPTCHA solving")
 @click.option("--author", "-a", help="Filter by author name(s), semicolon-separated")
 @click.option("--title", "-t", help="Filter by title keyword")
 @click.option("--journal", "-j", help="Filter by journal name")
@@ -40,6 +40,7 @@ def main() -> None:
 @click.option("--min-citations", type=int, help="Minimum citations")
 @click.option("--subject", help="Filter by subject category")
 @click.option("--has-pdf", is_flag=True, help="Only show papers with PDF available")
+@click.option("--has-html", is_flag=True, help="Only show papers with HTML version available")
 @click.option("--language", help="Filter by language (e.g., en, zh)")
 @click.option("--format", "-f", type=click.Choice(["csv", "json", "html", "all"]), default="csv", help="Output format")
 def search(
@@ -47,6 +48,7 @@ def search(
     max_results: int,
     output: str,
     download: bool,
+    download_format: str,
     download_dir: str,
     sources: tuple,
     citation_style: str,
@@ -56,7 +58,6 @@ def search(
     import_profile: Optional[str],
     user_data_dir: Optional[str],
     headless: bool,
-    vision_model: str,
     author: Optional[str],
     title: Optional[str],
     journal: Optional[str],
@@ -68,6 +69,7 @@ def search(
     min_citations: Optional[int],
     subject: Optional[str],
     has_pdf: bool,
+    has_html: bool,
     language: Optional[str],
     format: str,
 ) -> None:
@@ -83,7 +85,8 @@ def search(
     Examples:
       zhuai search "deep learning" -s arxiv -s pubmed --year 2020-2024
       zhuai search "machine learning" --author "Hinton; LeCun" --quartile Q1
-      zhuai search "title:transformer AND author:Vaswani" --download
+      zhuai search "transformer" -s arxiv --download --download-format markdown
+      zhuai search "title:neural" -s arxiv --download --download-format all
     """
     source_list = list(sources) if sources else None
     
@@ -159,6 +162,11 @@ def search(
     click.echo(f"  - With PDF: {stats['papers_with_pdf']}")
     click.echo(f"  - Without PDF: {stats['papers_without_pdf']}")
     
+    # Count papers with HTML version (for arXiv)
+    html_count = sum(1 for p in papers if p.has_html or p.html_url)
+    if html_count > 0:
+        click.echo(f"  - With HTML version: {html_count}")
+    
     if format in ["csv", "all"]:
         searcher.export_to_csv(papers, output)
         click.echo(f"\nResults saved to: {output}")
@@ -174,12 +182,30 @@ def search(
         searcher.export_unavailable_citations(papers, unavailable_output, citation_style)
         click.echo(f"Unavailable paper citations saved to: {unavailable_output}")
     
-    if download and stats['papers_with_pdf'] > 0:
-        click.echo(f"\nDownloading PDFs to: {download_dir}")
-        results = searcher.download_papers_sync(papers)
+    if download:
+        if download_format == "pdf" and stats['papers_with_pdf'] > 0:
+            click.echo(f"\nDownloading PDFs to: {download_dir}")
+            results = searcher.download_papers_sync(papers, format="pdf")
+            successful = sum(1 for r in results.values() if r[0])
+            click.echo(f"Successfully downloaded: {successful}/{stats['papers_with_pdf']}")
         
-        successful = sum(1 for r in results.values() if r[0])
-        click.echo(f"Successfully downloaded: {successful}/{stats['papers_with_pdf']}")
+        elif download_format == "html" and html_count > 0:
+            click.echo(f"\nDownloading HTML versions to: {download_dir}")
+            results = searcher.download_papers_sync(papers, format="html")
+            successful = sum(1 for r in results.values() if r[0])
+            click.echo(f"Successfully downloaded: {successful}/{html_count}")
+        
+        elif download_format == "markdown" and html_count > 0:
+            click.echo(f"\nDownloading and converting to Markdown: {download_dir}")
+            results = searcher.download_papers_sync(papers, format="markdown")
+            successful = sum(1 for r in results.values() if r[0])
+            click.echo(f"Successfully downloaded: {successful}/{html_count}")
+        
+        elif download_format == "all":
+            click.echo(f"\nDownloading all formats to: {download_dir}")
+            results = searcher.download_papers_sync(papers, format="all")
+            successful = sum(1 for r in results.values() if r[0])
+            click.echo(f"Successfully downloaded: {successful}/{len(papers)}")
 
 
 @main.command()

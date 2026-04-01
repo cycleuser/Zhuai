@@ -18,7 +18,7 @@
 
 - **多数据源搜索**：arXiv、PubMed、CrossRef、Semantic Scholar、知网、万方、维普
 - **高级过滤**：按作者、标题、期刊、年份、分区、引用数过滤
-- **PDF 下载**：自动下载，跳过重复文件
+- **多格式下载**：PDF、HTML、Markdown（arXiv 论文）
 - **引用生成**：APA、MLA、Chicago、GB/T 7714、BibTeX 等格式
 - **Web 界面**：浏览器访问，支持高级筛选
 - **期刊数据库**：10,000+ 期刊，含 JCR/CAS 分区信息
@@ -46,6 +46,18 @@ pip install -e .
 # 基础搜索
 zhuai search "deep learning" -s arxiv -s pubmed --download
 
+# 下载 PDF（默认）
+zhuai search "transformer" -s arxiv --download
+
+# 下载 HTML 版本（有 HTML 的 arXiv 论文）
+zhuai search "neural network" -s arxiv --download --download-format html
+
+# 下载 Markdown 版本（从 HTML 转换）
+zhuai search "machine learning" -s arxiv --download --download-format markdown
+
+# 下载所有格式
+zhuai search "deep learning" -s arxiv --download --download-format all
+
 # 高级过滤
 zhuai search "machine learning" --author "Hinton" --year 2020-2024
 
@@ -71,7 +83,16 @@ searcher = PaperSearcher(sources=["arxiv", "pubmed", "crossref"])
 papers = searcher.search_sync("deep learning", max_results=50)
 
 # 下载 PDF
-results = searcher.download_papers_sync(papers)
+results = searcher.download_papers_sync(papers, format="pdf")
+
+# 下载 HTML 版本
+results = searcher.download_papers_sync(papers, format="html")
+
+# 下载 Markdown 版本
+results = searcher.download_papers_sync(papers, format="markdown")
+
+# 下载所有格式
+results = searcher.download_papers_sync(papers, format="all")
 
 # 导出结果
 searcher.export_to_csv(papers, "results.csv")

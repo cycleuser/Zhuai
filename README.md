@@ -18,7 +18,7 @@
 
 - **Multi-source Search**: arXiv, PubMed, CrossRef, Semantic Scholar, CNKI, Wanfang, VIP
 - **Advanced Filtering**: Filter by author, title, journal, year, quartile, citations
-- **PDF Download**: Automatic PDF downloading with duplicate detection
+- **Multi-format Download**: PDF, HTML, Markdown (for arXiv papers)
 - **Citation Generation**: APA, MLA, Chicago, GB/T 7714, BibTeX formats
 - **Web Interface**: Browser-based search with advanced filters
 - **Journal Database**: 10,000+ journals with JCR/CAS partition info
@@ -46,6 +46,18 @@ pip install -e .
 # Basic search
 zhuai search "deep learning" -s arxiv -s pubmed --download
 
+# Download PDF (default)
+zhuai search "transformer" -s arxiv --download
+
+# Download HTML version (arXiv papers with HTML)
+zhuai search "neural network" -s arxiv --download --download-format html
+
+# Download Markdown version (converted from HTML)
+zhuai search "machine learning" -s arxiv --download --download-format markdown
+
+# Download all formats
+zhuai search "deep learning" -s arxiv --download --download-format all
+
 # Advanced filtering
 zhuai search "machine learning" --author "Hinton" --year 2020-2024
 
@@ -71,7 +83,16 @@ searcher = PaperSearcher(sources=["arxiv", "pubmed", "crossref"])
 papers = searcher.search_sync("deep learning", max_results=50)
 
 # Download PDFs
-results = searcher.download_papers_sync(papers)
+results = searcher.download_papers_sync(papers, format="pdf")
+
+# Download HTML versions
+results = searcher.download_papers_sync(papers, format="html")
+
+# Download Markdown versions
+results = searcher.download_papers_sync(papers, format="markdown")
+
+# Download all formats
+results = searcher.download_papers_sync(papers, format="all")
 
 # Export results
 searcher.export_to_csv(papers, "results.csv")

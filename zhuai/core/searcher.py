@@ -279,17 +279,37 @@ class PaperSearcher:
         self,
         papers: List[Paper],
         show_progress: bool = True,
+        format: str = "pdf",
     ) -> Dict[str, tuple]:
-        """Download papers with available PDFs."""
-        return await self.download_manager.download_papers(papers, show_progress)
+        """Download papers with available PDFs/HTML/Markdown.
+        
+        Args:
+            papers: List of papers to download
+            show_progress: Show progress bar
+            format: Download format (pdf, html, markdown, all)
+            
+        Returns:
+            Dictionary mapping paper titles to (success, filepath/error)
+        """
+        return await self.download_manager.download_papers(papers, show_progress, format)
     
     def download_papers_sync(
         self,
         papers: List[Paper],
         show_progress: bool = True,
+        format: str = "pdf",
     ) -> Dict[str, tuple]:
-        """Synchronous wrapper for download_papers."""
-        return asyncio.run(self.download_papers(papers, show_progress))
+        """Synchronous wrapper for download_papers.
+        
+        Args:
+            papers: List of papers to download
+            show_progress: Show progress bar
+            format: Download format (pdf, html, markdown, all)
+            
+        Returns:
+            Dictionary mapping paper titles to (success, filepath/error)
+        """
+        return asyncio.run(self.download_papers(papers, show_progress, format))
     
     def export_to_csv(
         self,

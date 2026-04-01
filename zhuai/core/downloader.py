@@ -5,7 +5,6 @@ import csv
 import asyncio
 from pathlib import Path
 from typing import List, Optional, Dict, Tuple
-import aiohttp
 from tqdm import tqdm
 
 from zhuai.models.paper import Paper
@@ -13,7 +12,13 @@ from zhuai.core.validator import PDFValidator
 
 
 class DownloadManager:
-    """Manages paper downloads and CSV export."""
+    """Manages paper downloads and CSV export.
+    
+    Supports downloading:
+    - PDF files
+    - HTML versions (for arXiv papers)
+    - Markdown conversions (from HTML)
+    """
     
     def __init__(
         self,
@@ -52,16 +57,72 @@ class DownloadManager:
         filename = filename[:200].strip()
         return filename or "unnamed_paper"
     
+    async def _download_file(
+        self,
+        session,
+        url: str,
+        filepath: Path,
+        pbar: Optional[tqdm] = None,
+    ) -> Tuple[bool, Optional[str]]:
+        """Download a file from URL.
+        
+        Args:
+            session: HTTP session
+            url: URL to download
+            filepath: Path to save file
+            pbar: Progress bar
+            
+        Returns:
+            Tuple of (success, filepath or error message)
+        """
+        for attempt in range(self.retry_attempts):
+            try:
+                async with session.get(url, timeout=self.timeout) as response:
+                    if response.status != 200:
+                        if attempt < self.retry_attempts - 1:
+                            await asyncio.sleep(1)
+                            continue
+                        return False, f"HTTP {response.status}"
+                    
+                    content = await response.read()
+                    
+                    if filepath.exists():
+                        if pbar:
+                            pbar.update(1)
+                        return True, str(filepath)
+                    
+                    with open(filepath, "wb") as f:
+                        f.write(content)
+                    
+                    if pbar:
+                        pbar.update(1)
+                    
+                    return True, str(filepath)
+                    
+            except asyncio.TimeoutError:
+                if attempt < self.retry_attempts - 1:
+                    await asyncio.sleep(1)
+                    continue
+                return False, "Timeout"
+                
+            except Exception as e:
+                if attempt < self.retry_attempts - 1:
+                    await asyncio.sleep(1)
+                    continue
+                return False, str(e)
+        
+        return False, "Max retries exceeded"
+    
     async def _download_pdf(
         self,
-        session: aiohttp.ClientSession,
+        session,
         paper: Paper,
         pbar: Optional[tqdm] = None,
     ) -> Tuple[bool, Optional[str]]:
         """Download a single PDF asynchronously.
         
         Args:
-            session: aiohttp session.
+            session: HTTP session.
             paper: Paper to download.
             pbar: Progress bar.
             
@@ -88,11 +149,10 @@ class DownloadManager:
                     filename = self._sanitize_filename(paper.title)
                     filepath = self.download_dir / f"{filename}.pdf"
                     
-                    # Check if file already exists - skip duplicates
                     if filepath.exists():
                         if pbar:
                             pbar.update(1)
-                        return True, str(filepath)  # Return existing file path
+                        return True, str(filepath)
                     
                     with open(filepath, "wb") as f:
                         f.write(content)
@@ -116,35 +176,129 @@ class DownloadManager:
         
         return False, "Max retries exceeded"
     
+    async def _download_html(
+        self,
+        session,
+        paper: Paper,
+        pbar: Optional[tqdm] = None,
+    ) -> Tuple[bool, Optional[str]]:
+        """Download HTML version of a paper.
+        
+        Args:
+            session: HTTP session
+            paper: Paper to download
+            pbar: Progress bar
+            
+        Returns:
+            Tuple of (success, filepath or error message)
+        """
+        html_url = paper.html_url
+        
+        if not html_url and paper.arxiv_id:
+            html_url = f"https://arxiv.org/html/{paper.arxiv_id}"
+        
+        if not html_url:
+            return False, "No HTML URL available"
+        
+        filename = self._sanitize_filename(paper.title)
+        filepath = self.download_dir / f"{filename}.html"
+        
+        result = await self._download_file(session, html_url, filepath, pbar)
+        return result
+    
+    async def _download_markdown(
+        self,
+        session,
+        paper: Paper,
+        pbar: Optional[tqdm] = None,
+    ) -> Tuple[bool, Optional[str]]:
+        """Download and convert paper to Markdown.
+        
+        Args:
+            session: HTTP session
+            paper: Paper to download
+            pbar: Progress bar
+            
+        Returns:
+            Tuple of (success, filepath or error message)
+        """
+        html_url = paper.html_url
+        
+        if not html_url and paper.arxiv_id:
+            html_url = f"https://arxiv.org/html/{paper.arxiv_id}"
+        
+        if not html_url:
+            return False, "No HTML URL available"
+        
+        try:
+            async with session.get(html_url, timeout=self.timeout) as response:
+                if response.status != 200:
+                    return False, f"HTTP {response.status}"
+                
+                html_content = await response.text()
+            
+            from zhuai.utils.html_converter import convert_html_to_markdown
+            markdown_content = convert_html_to_markdown(html_content, html_url)
+            
+            filename = self._sanitize_filename(paper.title)
+            filepath = self.download_dir / f"{filename}.md"
+            
+            with open(filepath, "w", encoding="utf-8") as f:
+                f.write(markdown_content)
+            
+            if pbar:
+                pbar.update(1)
+            
+            return True, str(filepath)
+            
+        except Exception as e:
+            return False, str(e)
+    
     async def download_papers(
         self,
         papers: List[Paper],
         show_progress: bool = True,
+        format: str = "pdf",
     ) -> Dict[str, Tuple[bool, Optional[str]]]:
         """Download multiple papers asynchronously.
         
         Args:
             papers: List of papers to download.
             show_progress: Show progress bar.
+            format: Download format - "pdf", "html", "markdown", or "all".
             
         Returns:
             Dictionary mapping paper titles to (success, filepath/error).
         """
+        import httpx
+        
         results = {}
         
-        downloadable_papers = [p for p in papers if p.pdf_url]
+        if format == "pdf":
+            downloadable_papers = [p for p in papers if p.pdf_url]
+        elif format in ["html", "markdown"]:
+            downloadable_papers = [p for p in papers if p.html_url or p.arxiv_id]
+        elif format == "all":
+            downloadable_papers = [p for p in papers if p.pdf_url or p.html_url or p.arxiv_id]
+        else:
+            downloadable_papers = [p for p in papers if p.pdf_url]
         
         if not downloadable_papers:
             return results
         
-        connector = aiohttp.TCPConnector(limit=self.max_concurrent)
-        async with aiohttp.ClientSession(connector=connector) as session:
-            pbar = tqdm(total=len(downloadable_papers), desc="Downloading") if show_progress else None
+        async with httpx.AsyncClient(timeout=self.timeout) as client:
+            pbar = tqdm(total=len(downloadable_papers), desc=f"Downloading {format}") if show_progress else None
             
-            tasks = [
-                self._download_pdf(session, paper, pbar)
-                for paper in downloadable_papers
-            ]
+            tasks = []
+            for paper in downloadable_papers:
+                if format == "pdf":
+                    tasks.append(self._download_pdf(client, paper, pbar))
+                elif format == "html":
+                    tasks.append(self._download_html(client, paper, pbar))
+                elif format == "markdown":
+                    tasks.append(self._download_markdown(client, paper, pbar))
+                elif format == "all":
+                    tasks.append(self._download_all_formats(client, paper, pbar))
             
             download_results = await asyncio.gather(*tasks, return_exceptions=True)
             
@@ -159,21 +313,64 @@ class DownloadManager:
         
         return results
     
+    async def _download_all_formats(
+        self,
+        session,
+        paper: Paper,
+        pbar: Optional[tqdm] = None,
+    ) -> Tuple[bool, Dict[str, str]]:
+        """Download all available formats for a paper.
+        
+        Args:
+            session: HTTP session
+            paper: Paper to download
+            pbar: Progress bar
+            
+        Returns:
+            Tuple of (success, dict of format -> filepath)
+        """
+        results = {}
+        success = False
+        
+        if paper.pdf_url:
+            pdf_result = await self._download_pdf(session, paper, None)
+            if pdf_result[0]:
+                results["pdf"] = pdf_result[1]
+                success = True
+        
+        if paper.html_url or paper.arxiv_id:
+            html_result = await self._download_html(session, paper, None)
+            if html_result[0]:
+                results["html"] = html_result[1]
+                success = True
+            
+            md_result = await self._download_markdown(session, paper, None)
+            if md_result[0]:
+                results["markdown"] = md_result[1]
+                success = True
+        
+        if pbar:
+            pbar.update(1)
+        
+        return success, results
+    
     def download_papers_sync(
         self,
         papers: List[Paper],
         show_progress: bool = True,
+        format: str = "pdf",
     ) -> Dict[str, Tuple[bool, Optional[str]]]:
         """Synchronous wrapper for download_papers.
         
         Args:
             papers: List of papers to download.
             show_progress: Show progress bar.
+            format: Download format - "pdf", "html", "markdown", or "all".
             
         Returns:
             Dictionary mapping paper titles to (success, filepath/error).
         """
-        return asyncio.run(self.download_papers(papers, show_progress))
+        return asyncio.run(self.download_papers(papers, show_progress, format))
     
     def export_to_csv(
         self,
