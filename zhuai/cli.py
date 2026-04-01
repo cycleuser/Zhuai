@@ -401,5 +401,27 @@ def journal_info(issn: str) -> None:
     click.echo(f"\n{'=' * 60}")
 
 
+@main.command()
+@click.option("--host", "-h", default="0.0.0.0", help="Host to bind to")
+@click.option("--port", "-p", default=5000, help="Port to listen on")
+@click.option("--debug", is_flag=True, help="Enable debug mode")
+def web(host: str, port: int, debug: bool) -> None:
+    """Start the web interface.
+    
+    Start a web server for searching and downloading papers through a browser.
+    
+    Examples:
+        zhuai web
+        zhuai web --port 8080
+        zhuai web --host 127.0.0.1 --port 5000 --debug
+    """
+    try:
+        from zhuai.web.app import run_server
+        run_server(host=host, port=port, debug=debug)
+    except ImportError as e:
+        click.echo(f"Error: Web module not available. {e}")
+        click.echo("Make sure Flask is installed: pip install flask")
+
+
 if __name__ == "__main__":
     main()

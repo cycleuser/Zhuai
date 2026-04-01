@@ -6,52 +6,28 @@
 [![License](https://img.shields.io/badge/License-GPL%20v3-green.svg)](LICENSE)
 [![GitHub](https://img.shields.io/badge/GitHub-cycleuser%2FZhuai-blue.svg)](https://github.com/cycleuser/Zhuai)
 
-**拽** - 简单好用的学术文献搜索工具，支持 Vision AI 全自动处理
+**拽** - 学术论文检索、下载与引用工具
+
+[English](README.md)
 
 </div>
 
 ---
 
-## 这是什么？
+## 功能特点
 
-Zhuai（拽）是一个简单的工具，帮你从网上找文章和下载论文。使用本地视觉模型自动处理验证码和页面解析，**完全自动化，无需人工干预**。
-
-## 主要功能
-
-- **全自动运行**：Vision AI 自动处理验证码和页面解析
-- **多数据源搜索**：arXiv、PubMed、CNKI、万方、维普、CrossRef 等
+- **多数据源搜索**：arXiv、PubMed、CrossRef、Semantic Scholar、知网、万方、维普
+- **高级过滤**：按作者、标题、期刊、年份、分区、引用数过滤
 - **PDF 下载**：自动下载，跳过重复文件
-- **双语引用**：支持 APA + GB/T 7714 格式
-- **CSV/HTML 导出**：完整元数据，可点击链接
-
-## 支持的网站
-
-### 国际数据源（API 接口，无验证码）
-- arXiv - 预印本论文库
-- PubMed - 生物医学文献
-- CrossRef - DOI 数据库
-- Semantic Scholar - 学术搜索引擎
-
-### 中文数据源（Vision AI 自动处理）
-- 知网 (CNKI) - 自动验证码识别
-- 万方数据 - 自动验证码识别
-- 维普 (VIP) - 自动验证码识别
+- **引用生成**：APA、MLA、Chicago、GB/T 7714、BibTeX 等格式
+- **Web 界面**：浏览器访问，支持高级筛选
+- **期刊数据库**：10,000+ 期刊，含 JCR/CAS 分区信息
+- **多格式导出**：CSV、JSON、HTML
 
 ## 安装
 
 ```bash
-# 安装工具
 pip install zhuai
-
-# 安装浏览器（中文数据源需要）
-playwright install chromium
-
-# 安装 Ollama（Vision AI 必需）
-# macOS/Linux:
-curl -fsSL https://ollama.com/install.sh | sh
-
-# 下载视觉模型
-ollama pull gemma3:4b
 ```
 
 或从源码安装：
@@ -60,38 +36,27 @@ ollama pull gemma3:4b
 git clone https://github.com/cycleuser/Zhuai.git
 cd Zhuai
 pip install -e .
-playwright install chromium
 ```
 
-## 使用
+## 使用方法
 
-### 基本搜索
+### 命令行
 
 ```bash
-# 国际数据源（快速，无验证码）
+# 基础搜索
 zhuai search "deep learning" -s arxiv -s pubmed --download
 
-# 中文数据源（Vision AI 自动处理验证码）
-zhuai search "定和效应" -s cnki --max-results 10
+# 高级过滤
+zhuai search "machine learning" --author "Hinton" --year 2020-2024
 
-# 多个数据源
-zhuai search "人工智能" -s arxiv -s cnki -s pubmed
-```
+# 按分区过滤
+zhuai search "transformer" --quartile Q1 --min-citations 100
 
-### 高级选项
+# 字段限定搜索
+zhuai search "title:neural network author:LeCun"
 
-```bash
-# 指定视觉模型
-zhuai search "高维度空间距离" -s cnki --vision-model gemma3:4b
-
-# 从浏览器导入登录 Cookies
-zhuai search "定和效应" -s cnki --import-browser firefox
-
-# 调整结果数量
-zhuai search "机器学习" -s arxiv --max-results 50 --download
-
-# 查看支持的数据源
-zhuai sources
+# Web 界面
+zhuai web --port 5000
 ```
 
 ### Python API
@@ -100,40 +65,98 @@ zhuai sources
 from zhuai import PaperSearcher
 
 # 创建搜索器
-searcher = PaperSearcher(
-    sources=["arxiv", "cnki", "pubmed"],
-    vision_model="gemma3:4b"
-)
+searcher = PaperSearcher(sources=["arxiv", "pubmed", "crossref"])
 
 # 搜索论文
-papers = searcher.search_sync("summation effect", max_results=50)
+papers = searcher.search_sync("deep learning", max_results=50)
 
 # 下载 PDF
 results = searcher.download_papers_sync(papers)
 
-# 保存结果
+# 导出结果
 searcher.export_to_csv(papers, "results.csv")
 
-# 导出引用
+# 生成引用
 searcher.export_unavailable_citations(papers, "citations.txt", style="apa")
 ```
 
-## Vision AI 功能
+### 带过滤条件的高级搜索
 
-Zhuai 使用本地 Ollama 视觉模型实现完全自动化：
+```python
+from zhuai import PaperSearcher
+from zhuai.core.query_parser import SearchFilter
 
-1. **自动验证码检测**：截图分析页面状态
-2. **验证码自动解决**：
-   - 滑块验证码：计算拖动距离，模拟鼠标移动
-   - 点击验证码：识别点击位置
-   - 文字验证码：OCR 识别并输入
-3. **页面解析**：当 CSS 选择器失效时，Vision AI 从截图提取论文信息
+searcher = PaperSearcher()
 
-### 支持的视觉模型
+# 创建过滤器
+search_filter = SearchFilter(
+    authors=["Hinton", "LeCun"],
+    year_from=2020,
+    year_to=2024,
+    jcr_quartile="Q1",
+    min_citations=100
+)
 
-- `gemma3:4b`（默认，推荐）
-- `gemma3:1b`（更快，精度略低）
-- 任何 Ollama 兼容的视觉模型
+# 使用过滤条件搜索
+papers = searcher.search_advanced_sync(
+    query="neural networks",
+    search_filter=search_filter,
+    max_results=50
+)
+```
+
+## 支持的数据源
+
+| 数据源 | 类型 | PDF |
+|--------|------|-----|
+| arXiv | API | ✅ |
+| PubMed | API | ✅ |
+| CrossRef | API | ✅ |
+| Semantic Scholar | API | ✅ |
+| 知网 (CNKI) | 浏览器 | ✅ |
+| 万方数据 | 浏览器 | ✅ |
+| 维普 (VIP) | 浏览器 | ✅ |
+
+## CLI 命令
+
+| 命令 | 说明 |
+|------|------|
+| `zhuai search` | 搜索论文 |
+| `zhuai web` | 启动 Web 界面 |
+| `zhuai journals` | 搜索期刊 |
+| `zhuai journal-info` | 查看期刊详情 |
+| `zhuai sources` | 列出数据源 |
+
+## CLI 参数
+
+| 参数 | 说明 |
+|------|------|
+| `-s, --sources` | 数据源选择 |
+| `-n, --max-results` | 最大结果数 |
+| `-d, --download` | 下载 PDF |
+| `-a, --author` | 作者过滤 |
+| `-j, --journal` | 期刊过滤 |
+| `--year` | 年份/范围 (如 2020-2024) |
+| `-q, --quartile` | JCR 分区 (Q1/Q2/Q3/Q4) |
+| `--min-citations` | 最小引用数 |
+| `--has-pdf` | 仅显示有 PDF 的论文 |
+| `-f, --format` | 输出格式 (csv/json/html/all) |
+
+## Web 界面
+
+启动 Web 服务：
+
+```bash
+zhuai web
+# 访问 http://localhost:5000
+```
+
+Web 功能：
+- 多数据源搜索
+- 高级过滤面板
+- 批量下载
+- 多种引用格式
+- CSV/JSON 导出
 
 ## 引用格式
 
@@ -143,28 +166,29 @@ Zhuai 使用本地 Ollama 视觉模型实现完全自动化：
 - **GB/T 7714** - 中国国家标准
 - **BibTeX** - LaTeX 格式
 
-## 输出文件
+## 期刊数据库
 
-### CSV 文件
-包含：标题、作者、年份、期刊、DOI、PDF URL、来源、语言
+10,000+ 期刊，包含：
+- ISSN、出版商、官网链接
+- JCR 分区、影响因子
+- CAS 分区（1区/2区/3区/4区）
+- EI 收录状态
 
-### 引用文件
-对于无法下载的论文：
-- `unavailable.txt` - 文本格式引用
-- `results.csv` - 完整元数据和引用
+```bash
+# 搜索期刊
+zhuai journals "nature"
 
-## 技术特点
+# 按分区过滤
+zhuai journals "computer" --quartile Q1 --sci
 
-- **异步操作**：并发搜索，效率高
-- **Playwright Stealth**：隐藏自动化痕迹
-- **Vision AI**：基于 Ollama 的本地视觉模型
-- **类型注解**：完整的类型提示
+# 查看期刊详情
+zhuai journal-info 0028-0836
+```
 
 ## 系统要求
 
 - Python 3.8+
-- Ollama + 视觉模型（中文数据源需要）
-- Chromium 浏览器（Playwright 自动安装）
+- Chromium 浏览器（部分数据源需要，由 Playwright 自动安装）
 
 ## 开发
 
@@ -190,4 +214,4 @@ GPL v3 License
 
 ---
 
-**拽** - 简单、全自动、无需人工干预
+**拽** - 简单好用的学术论文检索工具

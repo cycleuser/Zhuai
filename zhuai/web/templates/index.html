@@ -1,0 +1,204 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Zhuai (拽) - 学术论文检索工具</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+</head>
+<body>
+    <div class="container">
+        <!-- Header -->
+        <header class="header">
+            <div class="logo">
+                <h1><i class="fas fa-search"></i> Zhuai <span class="subtitle">拽</span></h1>
+                <p class="tagline">学术论文检索与下载工具</p>
+            </div>
+            <nav class="nav">
+                <a href="#" class="active"><i class="fas fa-home"></i> 搜索</a>
+                <a href="/journals"><i class="fas fa-book"></i> 期刊</a>
+                <a href="/help"><i class="fas fa-question-circle"></i> 帮助</a>
+            </nav>
+        </header>
+
+        <!-- Search Form -->
+        <section class="search-section">
+            <form id="searchForm">
+                <div class="search-box">
+                    <input type="text" id="query" name="query" placeholder="输入关键词、标题、作者或 DOI..." required>
+                    <button type="submit" class="search-btn">
+                        <i class="fas fa-search"></i> 搜索
+                    </button>
+                </div>
+
+                <!-- Source Selection -->
+                <div class="source-selection">
+                    <label>数据源:</label>
+                    <div class="source-chips">
+                        {% for source_id, source_info in sources.items() %}
+                        <label class="source-chip">
+                            <input type="checkbox" name="sources" value="{{ source_id }}" 
+                                   {% if source_id in ['arxiv', 'pubmed', 'crossref'] %}checked{% endif %}>
+                            <span class="chip-content">
+                                <i class="fas {{ source_info.icon }}"></i>
+                                {{ source_info.name }}
+                                {% if source_info.type == 'browser' %}
+                                <small>(Vision AI)</small>
+                                {% endif %}
+                            </span>
+                        </label>
+                        {% endfor %}
+                    </div>
+                </div>
+
+                <!-- Advanced Filters Toggle -->
+                <div class="advanced-toggle">
+                    <button type="button" id="toggleAdvanced">
+                        <i class="fas fa-filter"></i> 高级过滤
+                        <i class="fas fa-chevron-down"></i>
+                    </button>
+                </div>
+
+                <!-- Advanced Filters -->
+                <div class="advanced-filters" id="advancedFilters" style="display: none;">
+                    <div class="filter-row">
+                        <div class="filter-group">
+                            <label><i class="fas fa-user"></i> 作者</label>
+                            <input type="text" name="author" placeholder="作者姓名，分号分隔">
+                        </div>
+                        <div class="filter-group">
+                            <label><i class="fas fa-heading"></i> 标题关键词</label>
+                            <input type="text" name="title" placeholder="标题包含的关键词">
+                        </div>
+                        <div class="filter-group">
+                            <label><i class="fas fa-book"></i> 期刊</label>
+                            <input type="text" name="journal" placeholder="期刊名称">
+                        </div>
+                    </div>
+
+                    <div class="filter-row">
+                        <div class="filter-group">
+                            <label><i class="fas fa-calendar"></i> 年份范围</label>
+                            <div class="year-range">
+                                <select name="year_from">
+                                    <option value="">起始年份</option>
+                                    {% for year in years %}
+                                    <option value="{{ year }}">{{ year }}</option>
+                                    {% endfor %}
+                                </select>
+                                <span>-</span>
+                                <select name="year_to">
+                                    <option value="">结束年份</option>
+                                    {% for year in years %}
+                                    <option value="{{ year }}">{{ year }}</option>
+                                    {% endfor %}
+                                </select>
+                            </div>
+                        </div>
+                        <div class="filter-group">
+                            <label><i class="fas fa-chart-line"></i> JCR 分区</label>
+                            <select name="quartile">
+                                <option value="">全部</option>
+                                {% for q in quartiles %}
+                                <option value="{{ q }}">{{ q }}</option>
+                                {% endfor %}
+                            </select>
+                        </div>
+                        <div class="filter-group">
+                            <label><i class="fas fa-quote-right"></i> 最小引用数</label>
+                            <input type="number" name="min_citations" placeholder="例如: 100" min="0">
+                        </div>
+                    </div>
+
+                    <div class="filter-row">
+                        <div class="filter-group">
+                            <label><i class="fas fa-file-pdf"></i> 仅显示有 PDF</label>
+                            <label class="switch">
+                                <input type="checkbox" name="has_pdf">
+                                <span class="slider"></span>
+                            </label>
+                        </div>
+                        <div class="filter-group">
+                            <label><i class="fas fa-list-ol"></i> 最大结果数</label>
+                            <select name="max_results">
+                                <option value="20">20</option>
+                                <option value="50" selected>50</option>
+                                <option value="100">100</option>
+                                <option value="200">200</option>
+                            </select>
+                        </div>
+                    </div>
+                </div>
+            </form>
+        </section>
+
+        <!-- Results Section -->
+        <section class="results-section" id="resultsSection" style="display: none;">
+            <div class="results-header">
+                <h2><i class="fas fa-list"></i> 搜索结果 <span id="resultCount"></span></h2>
+                <div class="results-actions">
+                    <button id="selectAll" class="btn btn-sm">
+                        <i class="fas fa-check-square"></i> 全选
+                    </button>
+                    <button id="downloadSelected" class="btn btn-sm btn-primary">
+                        <i class="fas fa-download"></i> 下载选中
+                    </button>
+                    <button id="exportCSV" class="btn btn-sm">
+                        <i class="fas fa-file-csv"></i> 导出 CSV
+                    </button>
+                    <button id="exportJSON" class="btn btn-sm">
+                        <i class="fas fa-file-code"></i> 导出 JSON
+                    </button>
+                </div>
+            </div>
+
+            <div class="results-list" id="resultsList">
+                <!-- Results will be inserted here -->
+            </div>
+        </section>
+
+        <!-- Loading Overlay -->
+        <div class="loading-overlay" id="loadingOverlay" style="display: none;">
+            <div class="spinner"></div>
+            <p>正在搜索...</p>
+        </div>
+
+        <!-- Citation Modal -->
+        <div class="modal" id="citationModal" style="display: none;">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h3><i class="fas fa-quote-left"></i> 引用格式</h3>
+                    <button class="modal-close" onclick="closeCitationModal()">&times;</button>
+                </div>
+                <div class="modal-body">
+                    <div class="citation-styles">
+                        <button class="style-btn active" data-style="apa">APA</button>
+                        <button class="style-btn" data-style="mla">MLA</button>
+                        <button class="style-btn" data-style="chicago">Chicago</button>
+                        <button class="style-btn" data-style="gb_t_7714">GB/T 7714</button>
+                        <button class="style-btn" data-style="bibtex">BibTeX</button>
+                    </div>
+                    <div class="citation-text" id="citationText"></div>
+                    <button class="btn btn-primary" onclick="copyCitation()">
+                        <i class="fas fa-copy"></i> 复制
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Footer -->
+        <footer class="footer">
+            <p>
+                <a href="https://github.com/cycleuser/Zhuai" target="_blank">
+                    <i class="fab fa-github"></i> GitHub
+                </a>
+                | Zhuai (拽) v2.0.0 | 
+                <span id="journalCount">10,104</span> 期刊
+            </p>
+        </footer>
+    </div>
+
+    <script src="{{ url_for('static', filename='js/main.js') }}"></script>
+</body>
+</html>

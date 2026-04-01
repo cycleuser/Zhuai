@@ -6,54 +6,28 @@
 [![License](https://img.shields.io/badge/License-GPL%20v3-green.svg)](LICENSE)
 [![GitHub](https://img.shields.io/badge/GitHub-cycleuser%2FZhuai-blue.svg)](https://github.com/cycleuser/Zhuai)
 
-**Zhuai** - A Simple Tool for Finding Academic Papers with Vision AI
+**Zhuai** - Academic Paper Search, Download and Citation Tool
 
-[中文](README_CN.md) | [English](README_EN.md)
+[中文](README_CN.md)
 
 </div>
 
 ---
 
-## What is this?
+## Features
 
-Zhuai is a simple tool that helps you search and download academic papers from various sources. It uses Vision AI to automatically handle CAPTCHAs and parse pages, making the entire process fully automated without any human intervention.
-
-## Key Features
-
-- **Fully Automated**: Vision AI handles CAPTCHAs and page parsing automatically
-- **Multi-source Search**: arXiv, PubMed, CNKI, Wanfang, VIP, CrossRef, etc.
+- **Multi-source Search**: arXiv, PubMed, CrossRef, Semantic Scholar, CNKI, Wanfang, VIP
+- **Advanced Filtering**: Filter by author, title, journal, year, quartile, citations
 - **PDF Download**: Automatic PDF downloading with duplicate detection
-- **Bilingual Citations**: APA + GB/T 7714 formats for Chinese and English
-- **CSV/HTML Export**: Complete metadata with clickable links
-
-## Supported Sources
-
-**International (API-based, no CAPTCHA):**
-- arXiv - Preprints
-- PubMed - Biomedical literature
-- CrossRef - DOI database
-- Semantic Scholar - Academic search
-
-**Chinese (Vision AI powered):**
-- CNKI (知网) - with automatic CAPTCHA solving
-- Wanfang Data (万方) - with automatic CAPTCHA solving
-- VIP (维普) - with automatic CAPTCHA solving
+- **Citation Generation**: APA, MLA, Chicago, GB/T 7714, BibTeX formats
+- **Web Interface**: Browser-based search with advanced filters
+- **Journal Database**: 10,000+ journals with JCR/CAS partition info
+- **Multiple Export Formats**: CSV, JSON, HTML
 
 ## Installation
 
 ```bash
-# Install the tool
 pip install zhuai
-
-# Install browser for Chinese sources
-playwright install chromium
-
-# Install Ollama for Vision AI (required for Chinese sources)
-# macOS/Linux:
-curl -fsSL https://ollama.com/install.sh | sh
-
-# Download vision model
-ollama pull gemma3:4b
 ```
 
 Or install from source:
@@ -62,38 +36,27 @@ Or install from source:
 git clone https://github.com/cycleuser/Zhuai.git
 cd Zhuai
 pip install -e .
-playwright install chromium
 ```
 
 ## Usage
 
-### Basic Search
+### Command Line
 
 ```bash
-# International sources (fast, no CAPTCHA)
+# Basic search
 zhuai search "deep learning" -s arxiv -s pubmed --download
 
-# Chinese sources (Vision AI handles CAPTCHA automatically)
-zhuai search "定和效应" -s cnki --max-results 10
+# Advanced filtering
+zhuai search "machine learning" --author "Hinton" --year 2020-2024
 
-# Multiple sources
-zhuai search "artificial intelligence" -s arxiv -s cnki -s pubmed
-```
+# Filter by quartile
+zhuai search "transformer" --quartile Q1 --min-citations 100
 
-### Advanced Options
+# Field-specific search
+zhuai search "title:neural network author:LeCun"
 
-```bash
-# Specify vision model
-zhuai search "高维度空间距离" -s cnki --vision-model gemma3:4b
-
-# Import browser cookies for login
-zhuai search "定和效应" -s cnki --import-browser firefox
-
-# Adjust number of results
-zhuai search "machine learning" -s arxiv --max-results 50 --download
-
-# List available sources
-zhuai sources
+# Web interface
+zhuai web --port 5000
 ```
 
 ### Python API
@@ -101,41 +64,99 @@ zhuai sources
 ```python
 from zhuai import PaperSearcher
 
-# Create searcher with vision model
-searcher = PaperSearcher(
-    sources=["arxiv", "cnki", "pubmed"],
-    vision_model="gemma3:4b"
-)
+# Create searcher
+searcher = PaperSearcher(sources=["arxiv", "pubmed", "crossref"])
 
 # Search papers
-papers = searcher.search_sync("summation effect", max_results=50)
+papers = searcher.search_sync("deep learning", max_results=50)
 
 # Download PDFs
 results = searcher.download_papers_sync(papers)
 
-# Save results
+# Export results
 searcher.export_to_csv(papers, "results.csv")
 
-# Export citations
+# Generate citations
 searcher.export_unavailable_citations(papers, "citations.txt", style="apa")
 ```
 
-## Vision AI Features
+### Advanced Search with Filters
 
-Zhuai uses local Ollama vision models to achieve full automation:
+```python
+from zhuai import PaperSearcher
+from zhuai.core.query_parser import SearchFilter
 
-1. **Automatic CAPTCHA Detection**: Screenshots pages and analyzes for CAPTCHAs
-2. **CAPTCHA Solving**:
-   - Slider CAPTCHA: Calculates drag distance and simulates mouse movement
-   - Click CAPTCHA: Identifies click positions
-   - Text CAPTCHA: OCR recognition and input
-3. **Page Parsing**: When CSS selectors fail, Vision AI extracts paper info from screenshots
+searcher = PaperSearcher()
 
-### Supported Vision Models
+# Create filter
+search_filter = SearchFilter(
+    authors=["Hinton", "LeCun"],
+    year_from=2020,
+    year_to=2024,
+    jcr_quartile="Q1",
+    min_citations=100
+)
 
-- `gemma3:4b` (default, recommended)
-- `gemma3:1b` (faster, less accurate)
-- Any Ollama-compatible vision model
+# Search with filter
+papers = searcher.search_advanced_sync(
+    query="neural networks",
+    search_filter=search_filter,
+    max_results=50
+)
+```
+
+## Supported Sources
+
+| Source | Type | PDF |
+|--------|------|-----|
+| arXiv | API | ✅ |
+| PubMed | API | ✅ |
+| CrossRef | API | ✅ |
+| Semantic Scholar | API | ✅ |
+| CNKI | Browser | ✅ |
+| Wanfang | Browser | ✅ |
+| VIP | Browser | ✅ |
+
+## CLI Commands
+
+| Command | Description |
+|---------|-------------|
+| `zhuai search` | Search papers |
+| `zhuai web` | Start web interface |
+| `zhuai journals` | Search journals |
+| `zhuai journal-info` | Get journal details |
+| `zhuai sources` | List available sources |
+
+## CLI Options
+
+| Option | Description |
+|--------|-------------|
+| `-s, --sources` | Data sources to search |
+| `-n, --max-results` | Maximum results |
+| `-d, --download` | Download PDFs |
+| `-a, --author` | Filter by author |
+| `-j, --journal` | Filter by journal |
+| `--year` | Filter by year (e.g., 2020-2024) |
+| `-q, --quartile` | JCR quartile (Q1/Q2/Q3/Q4) |
+| `--min-citations` | Minimum citations |
+| `--has-pdf` | Only papers with PDF |
+| `-f, --format` | Output format (csv/json/html/all) |
+
+## Web Interface
+
+Start the web server:
+
+```bash
+zhuai web
+# Visit http://localhost:5000
+```
+
+Web features:
+- Multi-source search
+- Advanced filtering panel
+- Batch download
+- Multiple citation formats
+- CSV/JSON export
 
 ## Citation Formats
 
@@ -145,28 +166,29 @@ Zhuai uses local Ollama vision models to achieve full automation:
 - **GB/T 7714** - Chinese National Standard
 - **BibTeX** - LaTeX format
 
-## Output
+## Journal Database
 
-### CSV File
-Contains: title, authors, year, journal, DOI, PDF URL, source, language
+10,000+ journals with:
+- ISSN, publisher, official URL
+- JCR quartile, impact factor
+- CAS partition (1区/2区/3区/4区)
+- EI indexing status
 
-### Citation Files
-For papers without PDF access:
-- `unavailable.txt` - Text format citations
-- `results.csv` - Complete metadata with citations
+```bash
+# Search journals
+zhuai journals "nature"
 
-## Technical Details
+# Filter by quartile
+zhuai journals "computer" --quartile Q1 --sci
 
-- **Async Operations**: Concurrent searches for efficiency
-- **Playwright Stealth**: Hides automation traces
-- **Vision AI**: Ollama-based local vision models
-- **Type Hints**: Complete type annotations
+# Get journal details
+zhuai journal-info 0028-0836
+```
 
 ## Requirements
 
 - Python 3.8+
-- Ollama with vision model (for Chinese sources)
-- Chromium browser (auto-installed by Playwright)
+- Chromium browser (auto-installed by Playwright for some sources)
 
 ## Development
 
@@ -192,4 +214,4 @@ GPL v3 License
 
 ---
 
-**Zhuai** - Simple, automated, no human intervention needed
+**Zhuai** - Simple and powerful academic paper search tool
