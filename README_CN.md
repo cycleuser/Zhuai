@@ -16,13 +16,15 @@
 
 ## 功能特点
 
-- **多数据源搜索**：arXiv、PubMed、CrossRef、Semantic Scholar、知网、万方、维普
+- **多数据源论文搜索**：arXiv、PubMed、CrossRef、Semantic Scholar、知网、万方、维普
+- **平台资源搜索**：GitHub、Hugging Face、Kaggle、ModelScope
 - **高级过滤**：按作者、标题、期刊、年份、分区、引用数过滤
-- **多格式下载**：PDF、HTML、Markdown（arXiv 论文）
-- **引用生成**：APA、MLA、Chicago、GB/T 7714、BibTeX 等格式
-- **Web 界面**：浏览器访问，支持高级筛选
+- **多格式下载**：PDF、HTML、Markdown
+- **趋势发现**：获取热门仓库、模型、数据集
+- **README 提取**：从仓库和模型提取文档
+- **引用生成**：APA、MLA、Chicago、GB/T 7714、BibTeX
+- **Web 界面**：浏览器访问
 - **期刊数据库**：10,000+ 期刊，含 JCR/CAS 分区信息
-- **多格式导出**：CSV、JSON、HTML
 
 ## 安装
 
@@ -126,6 +128,47 @@ papers = searcher.search_advanced_sync(
 )
 ```
 
+## 平台资源搜索
+
+搜索代码仓库、模型和数据集：
+
+```bash
+# GitHub
+zhuai search-platforms "transformer" -p github -l python
+zhuai trending -p github -l python --since weekly
+zhuai repo-info "microsoft/transformers" -p github
+
+# Hugging Face
+zhuai search-platforms "bert" -p huggingface -t model
+zhuai search-platforms "image dataset" -p huggingface -t dataset
+
+# HF Mirror（国内加速）
+zhuai search-platforms "llama" -p hfmirror
+
+# Kaggle
+zhuai search-platforms "image classification" -p kaggle -t dataset
+
+# ModelScope
+zhuai search-platforms "qwen" -p modelscope
+```
+
+### Python API
+
+```python
+from zhuai.sources.github import GitHubSource
+from zhuai.sources.huggingface import HuggingFaceSource
+
+# GitHub
+github = GitHubSource()
+repos = github.search("transformer", language="python", min_stars=100)
+readme = github.get_readme("owner", "repo")
+
+# Hugging Face
+hf = HuggingFaceSource()
+models = hf.search_models("bert", task="text-generation")
+datasets = hf.search_datasets("image classification")
+```
+
 ## 支持的数据源
 
 | 数据源 | 类型 | PDF |
@@ -138,7 +181,28 @@ papers = searcher.search_advanced_sync(
 | 万方数据 | 浏览器 | ✅ |
 | 维普 (VIP) | 浏览器 | ✅ |
 
+## 支持的平台
+
+| 平台 | 资源类型 | 功能 |
+|------|---------|------|
+| GitHub | 代码 | 搜索、趋势、README、Releases |
+| Hugging Face | 模型、数据集 | 搜索、Model Card、文件 |
+| HF Mirror | 模型、数据集 | 国内加速访问 |
+| Kaggle | 数据集、模型 | 搜索、文件 |
+| ModelScope | 模型、数据集 | 搜索、文件 |
+
 ## CLI 命令
+
+| 命令 | 说明 |
+|------|------|
+| `zhuai search` | 搜索论文 |
+| `zhuai search-platforms` | 搜索仓库/模型/数据集 |
+| `zhuai trending` | 获取趋势资源 |
+| `zhuai repo-info` | 获取仓库/模型详情 |
+| `zhuai get-readme` | 获取 README 内容 |
+| `zhuai web` | 启动 Web 界面 |
+| `zhuai journals` | 搜索期刊 |
+| `zhuai sources` | 列出数据源 |
 
 | 命令 | 说明 |
 |------|------|

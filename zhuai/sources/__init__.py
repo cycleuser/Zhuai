@@ -11,6 +11,10 @@ from zhuai.sources.wanfang import WanfangSource
 from zhuai.sources.vip import VIPSource
 from zhuai.sources.bing import BingAcademicSource
 from zhuai.sources.baidu import BaiduAcademicSource
+from zhuai.sources.github import GitHubSource
+from zhuai.sources.huggingface import HuggingFaceSource, HFMirrorSource
+from zhuai.sources.kaggle import KaggleSource
+from zhuai.sources.modelscope import ModelScopeSource
 
 __all__ = [
     "BaseSource",
@@ -24,6 +28,11 @@ __all__ = [
     "VIPSource",
     "BingAcademicSource",
     "BaiduAcademicSource",
+    "GitHubSource",
+    "HuggingFaceSource",
+    "HFMirrorSource",
+    "KaggleSource",
+    "ModelScopeSource",
 ]
 
 ALL_SOURCES = {
@@ -36,4 +45,12 @@ ALL_SOURCES = {
     "vip": VIPSource,
     "bing": BingAcademicSource,
     "baidu": BaiduAcademicSource,
+}
+
+PLATFORM_SOURCES = {
+    "github": GitHubSource,
+    "huggingface": HuggingFaceSource,
+    "hfmirror": HFMirrorSource,
+    "kaggle": KaggleSource,
+    "modelscope": ModelScopeSource,
 }

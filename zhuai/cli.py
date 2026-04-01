@@ -449,5 +449,325 @@ def web(host: str, port: int, debug: bool) -> None:
         click.echo("Make sure Flask is installed: pip install flask")
 
 
+@main.command()
+@click.argument("query")
+@click.option("--platform", "-p", type=click.Choice(["github", "huggingface", "hfmirror", "kaggle", "modelscope"]), default="github", help="Platform to search")
+@click.option("--type", "-t", type=click.Choice(["code", "model", "dataset", "all"]), default="all", help="Resource type")
+@click.option("--language", "-l", help="Filter by programming language")
+@click.option("--min-stars", type=int, help="Minimum number of stars")
+@click.option("--max-results", "-n", default=30, help="Maximum number of results")
+@click.option("--output", "-o", help="Output file (CSV or JSON)")
+def search_platforms(
+    query: str,
+    platform: str,
+    type: str,
+    language: Optional[str],
+    min_stars: Optional[int],
+    max_results: int,
+    output: Optional[str],
+) -> None:
+    """Search code repositories, models, and datasets on various platforms.
+    
+    Supported platforms:
+    - github: Search code repositories
+    - huggingface: Search models and datasets
+    - hfmirror: HuggingFace mirror (faster in China)
+    - kaggle: Search datasets and models
+    - modelscope: Search models and datasets (Alibaba's platform)
+    
+    Examples:
+        zhuai search-platforms "transformer" -p github -l python
+        zhuai search-platforms "bert" -p huggingface -t model
+        zhuai search-platforms "image classification" -p kaggle -t dataset
+        zhuai search-platforms "LLM" -p modelscope
+    """
+    click.echo(f"Searching {platform} for: {query}")
+    
+    results = []
+    
+    try:
+        if platform == "github":
+            from zhuai.sources.github import GitHubSource
+            source = GitHubSource()
+            results = source.search(
+                query=query,
+                language=language,
+                min_stars=min_stars,
+                max_results=max_results,
+            )
+        
+        elif platform == "huggingface":
+            from zhuai.sources.huggingface import HuggingFaceSource
+            source = HuggingFaceSource()
+            
+            if type in ["model", "all"]:
+                models = source.search_models(query, max_results=max_results)
+                results.extend(models)
+            if type in ["dataset", "all"]:
+                datasets = source.search_datasets(query, max_results=max_results)
+                results.extend(datasets)
+        
+        elif platform == "hfmirror":
+            from zhuai.sources.huggingface import HFMirrorSource
+            source = HFMirrorSource()
+            
+            if type in ["model", "all"]:
+                models = source.search_models(query, max_results=max_results)
+                results.extend(models)
+            if type in ["dataset", "all"]:
+                datasets = source.search_datasets(query, max_results=max_results)
+                results.extend(datasets)
+        
+        elif platform == "kaggle":
+            from zhuai.sources.kaggle import KaggleSource
+            source = KaggleSource()
+            
+            if type in ["dataset", "all"]:
+                datasets = source.search_datasets(query, max_results=max_results)
+                results.extend(datasets)
+            if type in ["model", "all"]:
+                models = source.search_models(query, max_results=max_results)
+                results.extend(models)
+        
+        elif platform == "modelscope":
+            from zhuai.sources.modelscope import ModelScopeSource
+            source = ModelScopeSource()
+            
+            if type in ["model", "all"]:
+                models = source.search_models(query, max_results=max_results)
+                results.extend(models)
+            if type in ["dataset", "all"]:
+                datasets = source.search_datasets(query, max_results=max_results)
+                results.extend(datasets)
+        
+        if not results:
+            click.echo("No results found.")
+            return
+        
+        click.echo(f"\nFound {len(results)} results:\n")
+        click.echo("-" * 100)
+        click.echo(f"{'Name':<40} {'Stars':<10} {'Downloads':<12} {'Type':<10} {'Platform':<15}")
+        click.echo("-" * 100)
+        
+        for r in results[:max_results]:
+            name = r.name[:37] + "..." if len(r.name) > 40 else r.name
+            stars = f"{r.stars:,}" if r.stars else "-"
+            downloads = f"{r.downloads:,}" if r.downloads else "-"
+            resource_type = r.resource_type or "-"
+            platform_name = r.platform or "-"
+            
+            click.echo(f"{name:<40} {stars:<10} {downloads:<12} {resource_type:<10} {platform_name:<15}")
+            if r.description:
+                desc = r.description[:90] + "..." if len(r.description) > 90 else r.description
+                click.echo(f"  {desc}")
+        
+        click.echo("-" * 100)
+        
+        if output:
+            import json
+            if output.endswith(".json"):
+                with open(output, "w", encoding="utf-8") as f:
+                    json.dump([r.to_dict() for r in results], f, indent=2, ensure_ascii=False)
+            else:
+                import csv
+                with open(output, "w", newline="", encoding="utf-8") as f:
+                    writer = csv.DictWriter(f, fieldnames=["name", "full_name", "description", "stars", "downloads", "resource_type", "platform", "url"])
+                    writer.writeheader()
+                    for r in results:
+                        writer.writerow(r.to_dict())
+            click.echo(f"\nResults saved to: {output}")
+    
+    except Exception as e:
+        click.echo(f"Error: {e}")
+
+
+@main.command()
+@click.option("--platform", "-p", type=click.Choice(["github", "huggingface", "modelscope"]), default="github", help="Platform")
+@click.option("--language", "-l", help="Filter by programming language")
+@click.option("--since", type=click.Choice(["daily", "weekly", "monthly"]), default="daily", help="Time period")
+@click.option("--max-results", "-n", default=25, help="Maximum number of results")
+def trending(platform: str, language: Optional[str], since: str, max_results: int) -> None:
+    """Get trending repositories/models.
+    
+    Examples:
+        zhuai trending -p github -l python
+        zhuai trending -p huggingface
+        zhuai trending -p modelscope
+    """
+    click.echo(f"Getting trending on {platform} ({since})...")
+    
+    try:
+        if platform == "github":
+            from zhuai.sources.github import GitHubSource
+            source = GitHubSource()
+            items = source.get_trending(language=language, since=since, max_results=max_results)
+        
+        elif platform == "huggingface":
+            from zhuai.sources.huggingface import HuggingFaceSource
+            source = HuggingFaceSource()
+            items = source.get_trending_models(max_results=max_results)
+        
+        elif platform == "modelscope":
+            from zhuai.sources.modelscope import ModelScopeSource
+            source = ModelScopeSource()
+            items = source.get_trending_models(max_results=max_results)
+        
+        if not items:
+            click.echo("No trending items found.")
+            return
+        
+        click.echo(f"\nTop {len(items)} trending:\n")
+        click.echo("-" * 100)
+        
+        for item in items:
+            r = item.resource
+            rank = f"#{item.rank}"
+            stars = f"⭐ {r.stars:,}" if r.stars else ""
+            name = r.full_name[:50] if len(r.full_name) > 50 else r.full_name
+            
+            click.echo(f"{rank:<5} {name}")
+            click.echo(f"       {stars}  {r.resource_type}  {r.url}")
+            if r.description:
+                desc = r.description[:80] + "..." if len(r.description) > 80 else r.description
+                click.echo(f"       {desc}")
+            click.echo()
+        
+    except Exception as e:
+        click.echo(f"Error: {e}")
+
+
+@main.command()
+@click.argument("repo_id")
+@click.option("--platform", "-p", type=click.Choice(["github", "huggingface", "kaggle", "modelscope"]), default="github", help="Platform")
+def repo_info(repo_id: str, platform: str) -> None:
+    """Get detailed information about a repository/model.
+    
+    REPO_ID: Repository/model ID (e.g., "owner/repo" for GitHub, "owner/model" for HF)
+    
+    Examples:
+        zhuai repo-info "huggingface/transformers" -p github
+        zhuai repo-info "bert-base-uncased" -p huggingface
+        zhuai repo-info "Qwen/Qwen-7B-Chat" -p modelscope
+    """
+    click.echo(f"Fetching info for: {repo_id}")
+    
+    try:
+        if platform == "github":
+            from zhuai.sources.github import GitHubSource
+            source = GitHubSource()
+            
+            owner, repo = repo_id.split("/") if "/" in repo_id else (repo_id, "")
+            resource = source.get_repo(owner, repo)
+            readme = source.get_readme(owner, repo)
+            
+        elif platform == "huggingface":
+            from zhuai.sources.huggingface import HuggingFaceSource
+            source = HuggingFaceSource()
+            resource = source.get_model(repo_id)
+            readme = source.get_readme(repo_id)
+        
+        elif platform == "kaggle":
+            from zhuai.sources.kaggle import KaggleSource
+            source = KaggleSource()
+            
+            owner, dataset = repo_id.split("/") if "/" in repo_id else (repo_id, "")
+            resource = source.get_dataset(owner, dataset)
+            readme = None
+        
+        elif platform == "modelscope":
+            from zhuai.sources.modelscope import ModelScopeSource
+            source = ModelScopeSource()
+            resource = source.get_model(repo_id)
+            readme = source.get_readme(repo_id)
+        
+        if not resource:
+            click.echo("Not found.")
+            return
+        
+        click.echo(f"\n{'=' * 70}")
+        click.echo(f"{resource.full_name}")
+        click.echo(f"{'=' * 70}")
+        
+        click.echo(f"\n📊 Statistics:")
+        click.echo(f"  Stars: {resource.stars:,}")
+        click.echo(f"  Downloads: {resource.downloads:,}")
+        if resource.forks:
+            click.echo(f"  Forks: {resource.forks:,}")
+        if resource.likes:
+            click.echo(f"  Likes: {resource.likes:,}")
+        
+        if resource.language:
+            click.echo(f"\n💻 Language: {resource.language}")
+        if resource.license:
+            click.echo(f"📄 License: {resource.license}")
+        
+        if resource.topics:
+            click.echo(f"\n🏷️  Topics: {', '.join(resource.topics[:10])}")
+        
+        if resource.description:
+            click.echo(f"\n📝 Description:")
+            click.echo(f"  {resource.description}")
+        
+        click.echo(f"\n🔗 URL: {resource.url}")
+        
+        if readme:
+            click.echo(f"\n📖 README Preview (first 500 chars):")
+            click.echo("-" * 70)
+            preview = readme[:500] + "..." if len(readme) > 500 else readme
+            click.echo(preview)
+        
+        click.echo(f"\n{'=' * 70}")
+    
+    except Exception as e:
+        click.echo(f"Error: {e}")
+
+
+@main.command()
+@click.argument("repo_id")
+@click.option("--platform", "-p", type=click.Choice(["github", "huggingface", "modelscope"]), default="github", help="Platform")
+@click.option("--output", "-o", help="Output file path")
+def get_readme(repo_id: str, platform: str, output: Optional[str]) -> None:
+    """Get README content for a repository/model.
+    
+    REPO_ID: Repository/model ID
+    
+    Examples:
+        zhuai get-readme "microsoft/vscode" -p github
+        zhuai get-readme "bert-base-uncased" -p huggingface -o readme.md
+    """
+    try:
+        readme = None
+        
+        if platform == "github":
+            from zhuai.sources.github import GitHubSource
+            source = GitHubSource()
+            owner, repo = repo_id.split("/") if "/" in repo_id else (repo_id, "")
+            readme = source.get_readme(owner, repo)
+        
+        elif platform == "huggingface":
+            from zhuai.sources.huggingface import HuggingFaceSource
+            source = HuggingFaceSource()
+            readme = source.get_readme(repo_id)
+        
+        elif platform == "modelscope":
+            from zhuai.sources.modelscope import ModelScopeSource
+            source = ModelScopeSource()
+            readme = source.get_readme(repo_id)
+        
+        if not readme:
+            click.echo("README not found.")
+            return
+        
+        if output:
+            with open(output, "w", encoding="utf-8") as f:
+                f.write(readme)
+            click.echo(f"README saved to: {output}")
+        else:
+            click.echo(readme)
+    
+    except Exception as e:
+        click.echo(f"Error: {e}")
+
+
 if __name__ == "__main__":
     main()

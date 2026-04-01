@@ -16,13 +16,15 @@
 
 ## Features
 
-- **Multi-source Search**: arXiv, PubMed, CrossRef, Semantic Scholar, CNKI, Wanfang, VIP
+- **Multi-source Paper Search**: arXiv, PubMed, CrossRef, Semantic Scholar, CNKI, Wanfang, VIP
+- **Platform Resource Search**: GitHub, Hugging Face, Kaggle, ModelScope
 - **Advanced Filtering**: Filter by author, title, journal, year, quartile, citations
-- **Multi-format Download**: PDF, HTML, Markdown (for arXiv papers)
-- **Citation Generation**: APA, MLA, Chicago, GB/T 7714, BibTeX formats
-- **Web Interface**: Browser-based search with advanced filters
+- **Multi-format Download**: PDF, HTML, Markdown
+- **Trending & Discovery**: Get trending repos, models, datasets
+- **README Extraction**: Extract documentation from repos and models
+- **Citation Generation**: APA, MLA, Chicago, GB/T 7714, BibTeX
+- **Web Interface**: Browser-based search
 - **Journal Database**: 10,000+ journals with JCR/CAS partition info
-- **Multiple Export Formats**: CSV, JSON, HTML
 
 ## Installation
 
@@ -126,6 +128,47 @@ papers = searcher.search_advanced_sync(
 )
 ```
 
+## Platform Resource Search
+
+Search code repositories, models, and datasets:
+
+```bash
+# GitHub
+zhuai search-platforms "transformer" -p github -l python
+zhuai trending -p github -l python --since weekly
+zhuai repo-info "microsoft/transformers" -p github
+
+# Hugging Face
+zhuai search-platforms "bert" -p huggingface -t model
+zhuai search-platforms "image dataset" -p huggingface -t dataset
+
+# HF Mirror (faster in China)
+zhuai search-platforms "llama" -p hfmirror
+
+# Kaggle
+zhuai search-platforms "image classification" -p kaggle -t dataset
+
+# ModelScope
+zhuai search-platforms "qwen" -p modelscope
+```
+
+### Python API
+
+```python
+from zhuai.sources.github import GitHubSource
+from zhuai.sources.huggingface import HuggingFaceSource
+
+# GitHub
+github = GitHubSource()
+repos = github.search("transformer", language="python", min_stars=100)
+readme = github.get_readme("owner", "repo")
+
+# Hugging Face
+hf = HuggingFaceSource()
+models = hf.search_models("bert", task="text-generation")
+datasets = hf.search_datasets("image classification")
+```
+
 ## Supported Sources
 
 | Source | Type | PDF |
@@ -138,14 +181,27 @@ papers = searcher.search_advanced_sync(
 | Wanfang | Browser | ✅ |
 | VIP | Browser | ✅ |
 
+## Supported Platforms
+
+| Platform | Resources | Features |
+|----------|-----------|----------|
+| GitHub | Code | Search, Trending, README, Releases |
+| Hugging Face | Models, Datasets | Search, Model Cards, Files |
+| HF Mirror | Models, Datasets | Faster access in China |
+| Kaggle | Datasets, Models | Search, Files |
+| ModelScope | Models, Datasets | Search, Files |
+
 ## CLI Commands
 
 | Command | Description |
 |---------|-------------|
 | `zhuai search` | Search papers |
+| `zhuai search-platforms` | Search repos/models/datasets |
+| `zhuai trending` | Get trending resources |
+| `zhuai repo-info` | Get repo/model details |
+| `zhuai get-readme` | Get README content |
 | `zhuai web` | Start web interface |
 | `zhuai journals` | Search journals |
-| `zhuai journal-info` | Get journal details |
 | `zhuai sources` | List available sources |
 
 ## CLI Options
