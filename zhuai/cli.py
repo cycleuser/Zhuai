@@ -4,6 +4,7 @@ import click
 from typing import Optional, List
 from zhuai import PaperSearcher, CitationFormatter
 from zhuai.sources.browser_base import BrowserSource
+from zhuai.core.query_parser import create_filter_from_options
 
 
 @click.group()
@@ -28,6 +29,19 @@ def main() -> None:
 @click.option("--user-data-dir", help="Custom browser user data directory")
 @click.option("--headless/--no-headless", default=True, help="Run browser in headless mode")
 @click.option("--vision-model", default="gemma3:4b", help="Ollama vision model for CAPTCHA solving")
+@click.option("--author", "-a", help="Filter by author name(s), semicolon-separated")
+@click.option("--title", "-t", help="Filter by title keyword")
+@click.option("--journal", "-j", help="Filter by journal name")
+@click.option("--year", help="Filter by year or year range (e.g., 2020 or 2020-2024)")
+@click.option("--year-from", type=int, help="Minimum publication year")
+@click.option("--year-to", type=int, help="Maximum publication year")
+@click.option("--quartile", "-q", help="Filter by JCR quartile (Q1/Q2/Q3/Q4)")
+@click.option("--cas-quartile", help="Filter by CAS quartile (1区/2区/3区/4区)")
+@click.option("--min-citations", type=int, help="Minimum citations")
+@click.option("--subject", help="Filter by subject category")
+@click.option("--has-pdf", is_flag=True, help="Only show papers with PDF available")
+@click.option("--language", help="Filter by language (e.g., en, zh)")
+@click.option("--format", "-f", type=click.Choice(["csv", "json", "html", "all"]), default="csv", help="Output format")
 def search(
     query: str,
     max_results: int,
@@ -43,12 +57,57 @@ def search(
     user_data_dir: Optional[str],
     headless: bool,
     vision_model: str,
+    author: Optional[str],
+    title: Optional[str],
+    journal: Optional[str],
+    year: Optional[str],
+    year_from: Optional[int],
+    year_to: Optional[int],
+    quartile: Optional[str],
+    cas_quartile: Optional[str],
+    min_citations: Optional[int],
+    subject: Optional[str],
+    has_pdf: bool,
+    language: Optional[str],
+    format: str,
 ) -> None:
-    """Search for academic papers.
+    """Search for academic papers with advanced filtering.
     
     QUERY: Search query (supports Chinese and English)
+    
+    Advanced query syntax:
+      - Field search: title:deep learning, author:Smith, journal:Nature
+      - Year range: year:2020-2024
+      - Boolean: AND, OR, NOT (e.g., deep learning NOT review)
+    
+    Examples:
+      zhuai search "deep learning" -s arxiv -s pubmed --year 2020-2024
+      zhuai search "machine learning" --author "Hinton; LeCun" --quartile Q1
+      zhuai search "title:transformer AND author:Vaswani" --download
     """
     source_list = list(sources) if sources else None
+    
+    search_filter = create_filter_from_options(
+        author=author,
+        title=title,
+        journal=journal,
+        year=year,
+        year_from=year_from,
+        year_to=year_to,
+        jcr_quartile=quartile,
+        cas_quartile=cas_quartile,
+        min_citations=min_citations,
+        subject=subject,
+        has_pdf=has_pdf if has_pdf else None,
+        language=language,
+    )
+    
+    has_filters = any([
+        search_filter.authors, search_filter.journal, 
+        search_filter.year_from, search_filter.year_to,
+        search_filter.jcr_quartile, search_filter.cas_quartile,
+        search_filter.min_citations, search_filter.has_pdf,
+    ])
     
     searcher = PaperSearcher(
         sources=source_list,
@@ -62,7 +121,33 @@ def search(
     )
     
     click.echo(f"Searching for: {query}")
-    papers = searcher.search_sync(query, max_results=max_results)
+    if has_filters:
+        click.echo("Filters applied:")
+        if search_filter.authors:
+            click.echo(f"  - Authors: {', '.join(search_filter.authors)}")
+        if search_filter.journal:
+            click.echo(f"  - Journal: {search_filter.journal}")
+        if search_filter.year_from or search_filter.year_to:
+            y_from = search_filter.year_from or "any"
+            y_to = search_filter.year_to or "any"
+            click.echo(f"  - Year: {y_from} - {y_to}")
+        if search_filter.jcr_quartile:
+            click.echo(f"  - JCR Quartile: {search_filter.jcr_quartile}")
+        if search_filter.cas_quartile:
+            click.echo(f"  - CAS Quartile: {search_filter.cas_quartile}")
+        if search_filter.min_citations:
+            click.echo(f"  - Min citations: {search_filter.min_citations}")
+        if search_filter.has_pdf:
+            click.echo(f"  - Has PDF: Yes")
+    
+    if has_filters:
+        papers = searcher.search_advanced_sync(
+            query=query,
+            search_filter=search_filter,
+            max_results=max_results,
+        )
+    else:
+        papers = searcher.search_sync(query, max_results=max_results)
     
     if not papers:
         click.echo("No papers found.")
@@ -74,8 +159,16 @@ def search(
     click.echo(f"  - With PDF: {stats['papers_with_pdf']}")
     click.echo(f"  - Without PDF: {stats['papers_without_pdf']}")
     
-    searcher.export_to_csv(papers, output)
-    click.echo(f"\nResults saved to: {output}")
+    if format in ["csv", "all"]:
+        searcher.export_to_csv(papers, output)
+        click.echo(f"\nResults saved to: {output}")
+    
+    if format in ["json", "all"]:
+        import json
+        json_output = output.replace(".csv", ".json")
+        with open(json_output, "w", encoding="utf-8") as f:
+            json.dump([p.to_dict() for p in papers], f, indent=2, ensure_ascii=False)
+        click.echo(f"JSON saved to: {json_output}")
     
     if stats['papers_without_pdf'] > 0:
         searcher.export_unavailable_citations(papers, unavailable_output, citation_style)

@@ -8,6 +8,7 @@ from tqdm import tqdm
 from zhuai.models.paper import Paper
 from zhuai.core.downloader import DownloadManager
 from zhuai.core.citation import CitationFormatter
+from zhuai.core.query_parser import SearchFilter, QueryParser, create_filter_from_options
 from zhuai.sources.base import BaseSource
 from zhuai.sources import ALL_SOURCES
 
@@ -139,6 +140,140 @@ class PaperSearcher:
             sources=sources,
             show_progress=show_progress,
         ))
+    
+    async def search_advanced(
+        self,
+        query: str,
+        search_filter: Optional[SearchFilter] = None,
+        max_results: int = 100,
+        sources: Optional[List[str]] = None,
+        show_progress: bool = True,
+    ) -> List[Paper]:
+        """Advanced search with filtering.
+        
+        Args:
+            query: Search query
+            search_filter: SearchFilter with criteria
+            max_results: Maximum results
+            sources: Specific sources to search
+            show_progress: Show progress bar
+            
+        Returns:
+            Filtered list of papers
+        """
+        parser = QueryParser()
+        simple_query, parsed_filter = parser.parse_to_filter(query)
+        
+        if search_filter:
+            if search_filter.authors:
+                parsed_filter.authors.extend(search_filter.authors)
+            if search_filter.journal:
+                parsed_filter.journal = search_filter.journal
+            if search_filter.year_from:
+                parsed_filter.year_from = search_filter.year_from
+            if search_filter.year_to:
+                parsed_filter.year_to = search_filter.year_to
+            if search_filter.jcr_quartile:
+                parsed_filter.jcr_quartile = search_filter.jcr_quartile
+            if search_filter.cas_quartile:
+                parsed_filter.cas_quartile = search_filter.cas_quartile
+            if search_filter.min_citations:
+                parsed_filter.min_citations = search_filter.min_citations
+            if search_filter.has_pdf is not None:
+                parsed_filter.has_pdf = search_filter.has_pdf
+            if search_filter.language:
+                parsed_filter.language = search_filter.language
+            if search_filter.sources:
+                sources = search_filter.sources
+            if search_filter.keywords:
+                parsed_filter.keywords.extend(search_filter.keywords)
+        
+        papers = await self.search(
+            query=simple_query,
+            max_results=max_results * 2,
+            sources=sources,
+            show_progress=show_progress,
+        )
+        
+        if parsed_filter.authors or parsed_filter.journal or \
+           parsed_filter.year_from or parsed_filter.year_to or \
+           parsed_filter.min_citations is not None or \
+           parsed_filter.has_pdf is not None or \
+           parsed_filter.language or parsed_filter.keywords:
+            papers = [p for p in papers if parsed_filter.matches(p)]
+        
+        if parsed_filter.jcr_quartile or parsed_filter.cas_quartile:
+            papers = self._filter_by_journal_partition(
+                papers, 
+                jcr_quartile=parsed_filter.jcr_quartile,
+                cas_quartile=parsed_filter.cas_quartile
+            )
+        
+        return papers[:max_results]
+    
+    def search_advanced_sync(
+        self,
+        query: str,
+        search_filter: Optional[SearchFilter] = None,
+        max_results: int = 100,
+        sources: Optional[List[str]] = None,
+        show_progress: bool = True,
+    ) -> List[Paper]:
+        """Synchronous wrapper for advanced search."""
+        return asyncio.run(self.search_advanced(
+            query=query,
+            search_filter=search_filter,
+            max_results=max_results,
+            sources=sources,
+            show_progress=show_progress,
+        ))
+    
+    def _filter_by_journal_partition(
+        self,
+        papers: List[Paper],
+        jcr_quartile: Optional[str] = None,
+        cas_quartile: Optional[str] = None,
+    ) -> List[Paper]:
+        """Filter papers by journal partition.
+        
+        Args:
+            papers: List of papers
+            jcr_quartile: JCR quartile filter
+            cas_quartile: CAS quartile filter
+            
+        Returns:
+            Filtered papers
+        """
+        try:
+            from zhuai.journals.manager import JournalManager
+            
+            manager = JournalManager()
+            manager.load_from_files()
+            
+            filtered = []
+            for paper in papers:
+                if not paper.issn and not paper.journal:
+                    continue
+                
+                journal = None
+                if paper.issn:
+                    journal = manager.database.find_by_issn(paper.issn)
+                
+                if not journal and paper.journal:
+                    results = manager.database.find_by_title(paper.journal)
+                    if results:
+                        journal = results[0]
+                
+                if journal:
+                    if jcr_quartile and journal.jcr_quartile != jcr_quartile:
+                        continue
+                    if cas_quartile and journal.cas_quartile != cas_quartile:
+                        continue
+                    filtered.append(paper)
+            
+            return filtered
+        except Exception:
+            return papers
     
     async def download_papers(
         self,
